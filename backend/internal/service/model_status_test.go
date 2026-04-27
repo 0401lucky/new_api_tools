@@ -34,7 +34,7 @@ func TestBuildModelStatusSlotQueryFallsBackWithoutCompletionTokens(t *testing.T)
 	if !strings.Contains(query, "SUM(CASE WHEN type = 2 THEN 1 ELSE 0 END) as success") {
 		t.Fatalf("fallback slot query should count type=2 as success, got: %s", query)
 	}
-	if !strings.Contains(query, "0 as empty") {
+	if !strings.Contains(query, "0 as empty_count") {
 		t.Fatalf("fallback slot query should emit a zero empty-count column, got: %s", query)
 	}
 }
@@ -50,5 +50,8 @@ func TestBuildModelStatusSlotQueryUsesNormalizedTimestampExpression(t *testing.T
 	}
 	if !strings.Contains(query, "AND (CASE WHEN created_at > 9999999999 THEN FLOOR(created_at / 1000) ELSE created_at END) < ?") {
 		t.Fatalf("slot query should filter by normalized upper bound, got: %s", query)
+	}
+	if !strings.Contains(query, "as empty_count") {
+		t.Fatalf("slot query should avoid MySQL reserved alias names, got: %s", query)
 	}
 }

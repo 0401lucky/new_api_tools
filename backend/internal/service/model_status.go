@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,10 +77,10 @@ func buildAvailableModelsQuery(createdAtExpr string) string {
 
 func buildModelStatusSlotQuery(createdAtExpr string, startTime, slotSeconds int64, includeCompletionTokens bool) string {
 	successExpr := "SUM(CASE WHEN type = 2 THEN 1 ELSE 0 END) as success"
-	emptyExpr := "0 as empty"
+	emptyExpr := "0 as empty_count"
 	if includeCompletionTokens {
 		successExpr = "SUM(CASE WHEN type = 2 AND completion_tokens > 0 THEN 1 ELSE 0 END) as success"
-		emptyExpr = "SUM(CASE WHEN type = 2 AND completion_tokens = 0 THEN 1 ELSE 0 END) as empty"
+		emptyExpr = "SUM(CASE WHEN type = 2 AND completion_tokens = 0 THEN 1 ELSE 0 END) as empty_count"
 	}
 
 	return fmt.Sprintf(`
@@ -225,7 +226,7 @@ func (s *ModelStatusService) GetModelStatusWithCache(modelName, window string, u
 					total:   toInt64(row["total"]),
 					success: toInt64(row["success"]),
 					failure: toInt64(row["failure"]),
-					empty:   toInt64(row["empty"]),
+					empty:   toInt64(row["empty_count"]),
 				}
 			}
 		}
@@ -307,12 +308,17 @@ func (s *ModelStatusService) GetMultipleModelsStatus(modelNames []string, window
 // GetMultipleModelsStatusWithCache returns status for multiple models and allows bypassing cache.
 func (s *ModelStatusService) GetMultipleModelsStatusWithCache(modelNames []string, window string, useCache bool) ([]map[string]interface{}, error) {
 	results := make([]map[string]interface{}, 0, len(modelNames))
+	failedModels := make([]string, 0)
 	for _, name := range modelNames {
 		status, err := s.GetModelStatusWithCache(name, window, useCache)
 		if err != nil {
+			failedModels = append(failedModels, fmt.Sprintf("%s: %v", name, err))
 			continue
 		}
 		results = append(results, status)
+	}
+	if len(modelNames) > 0 && len(results) == 0 && len(failedModels) > 0 {
+		return nil, fmt.Errorf("all model status queries failed: %s", strings.Join(failedModels, "; "))
 	}
 	return results, nil
 }
