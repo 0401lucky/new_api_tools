@@ -3905,10 +3905,10 @@ export function RealtimeRanking() {
 
           {/* 审查记录详情弹窗 - Clean Light Style */}
           <Dialog open={!!selectedAuditLog} onOpenChange={(open) => !open && setSelectedAuditLog(null)}>
-            <DialogContent className="max-w-4xl p-0 overflow-hidden sm:rounded-2xl gap-0 bg-background text-foreground shadow-2xl border-border">
+            <DialogContent className="max-w-4xl w-[calc(100vw-2rem)] max-h-[92vh] p-0 overflow-hidden sm:rounded-2xl gap-0 bg-background text-foreground shadow-2xl border-border flex flex-col">
               {selectedAuditLog && (
                 <>
-                  <div className="p-6 pb-4 border-b bg-card">
+                  <div className="p-6 pb-4 border-b bg-card shrink-0">
                     <DialogHeader>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -3936,7 +3936,8 @@ export function RealtimeRanking() {
                     </DialogHeader>
                   </div>
 
-                  <div className="p-6 space-y-6 bg-muted/30 dark:bg-muted/10 min-h-[400px]">
+                  <div className="flex-1 min-h-0 overflow-y-auto bg-muted/30 dark:bg-muted/10">
+                    <div className="p-6 space-y-6 pb-8">
                     {/* Stats */}
                     <div className="grid grid-cols-4 gap-4">
                       {[
@@ -3970,7 +3971,7 @@ export function RealtimeRanking() {
                         <span className="text-xs text-muted-foreground">{selectedAuditLog.details?.length || 0} 条记录</span>
                       </div>
 
-                      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-muted-foreground/20">
+                      <div className="space-y-3 pr-1">
                         {selectedAuditLog.details?.map((detail: any, idx: number) => (
                           <Card key={idx} className="overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-card border-border/60">
                             <div className="p-4">
@@ -4081,9 +4082,10 @@ export function RealtimeRanking() {
                         ))}
                       </div>
                     </div>
+                    </div>
                   </div>
 
-                  <DialogFooter className="p-4 border-t bg-muted/10 sm:justify-center">
+                  <DialogFooter className="p-4 border-t bg-background sm:justify-center shrink-0">
                     <Button variant="outline" onClick={() => setSelectedAuditLog(null)} className="w-full sm:w-auto min-w-[100px]">
                       关闭报告
                     </Button>
