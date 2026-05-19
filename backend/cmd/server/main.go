@@ -121,6 +121,9 @@ func main() {
 	stopAbuseBroadcast := make(chan struct{})
 	go backgroundSyncAbuseBroadcast(stopAbuseBroadcast)
 
+	stopAIAutoBan := make(chan struct{})
+	go backgroundAIAutoBan(stopAIAutoBan)
+
 	// ========== 8. Start server with graceful shutdown ==========
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),
@@ -148,6 +151,7 @@ func main() {
 	// Stop background tasks
 	close(stopIPEnforce)
 	close(stopAbuseBroadcast)
+	close(stopAIAutoBan)
 
 	// Give the server 10 seconds to finish processing requests
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -282,6 +286,39 @@ func backgroundSyncAbuseBroadcast(stop <-chan struct{}) {
 			timer.Reset(currentInterval)
 		case <-stop:
 			logger.L.System("[违规广播] Hub 同步监督任务已停止")
+			return
+		}
+	}
+}
+
+// backgroundAIAutoBan periodically runs the AI review scan when enabled.
+func backgroundAIAutoBan(stop <-chan struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.L.Error(fmt.Sprintf("[AI审查] 后台任务 panic: %v", r))
+		}
+	}()
+
+	select {
+	case <-time.After(30 * time.Second):
+	case <-stop:
+		return
+	}
+
+	logger.L.System("[AI审查] 自动扫描监督任务已启动")
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		result := service.NewAIAutoBanService().RunScheduledScan()
+		if skipped, _ := result["skipped"].(bool); !skipped {
+			logger.L.Business(fmt.Sprintf("[AI审查] 自动扫描完成: %+v", result["stats"]))
+		}
+
+		select {
+		case <-ticker.C:
+		case <-stop:
+			logger.L.System("[AI审查] 自动扫描监督任务已停止")
 			return
 		}
 	}
