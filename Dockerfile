@@ -33,7 +33,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY backend/ .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GOMAXPROCS=2 go build -p 2 \
     -ldflags="-s -w" \
     -o /build/server \
     ./cmd/server

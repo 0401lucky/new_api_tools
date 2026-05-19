@@ -1,0 +1,34 @@
+# Git / local tooling
+.git/
+.github/
+.playwright-mcp/
+
+# Node dependencies and build output
+**/node_modules/
+**/dist/
+**/coverage/
+
+# Local environment and logs
+.env
+.env.*
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Repo-only artifacts not needed in Docker build
+docs/
+pgsql_schema_export_20260505/
+README.md
+RELEASE_0.1.0.md
+newapi_database_schema.md
+install.sh
+deploy.sh
