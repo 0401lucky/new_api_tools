@@ -3905,7 +3905,7 @@ export function RealtimeRanking() {
 
           {/* 审查记录详情弹窗 - Clean Light Style */}
           <Dialog open={!!selectedAuditLog} onOpenChange={(open) => !open && setSelectedAuditLog(null)}>
-            <DialogContent className="max-w-4xl w-[calc(100vw-2rem)] max-h-[92vh] p-0 overflow-hidden sm:rounded-2xl gap-0 bg-background text-foreground shadow-2xl border-border flex flex-col">
+            <DialogContent className="!flex !flex-col !gap-0 !w-[calc(100vw-2rem)] !max-w-4xl !h-[92dvh] !max-h-[92dvh] !p-0 !overflow-hidden sm:!rounded-2xl bg-background text-foreground shadow-2xl border-border">
               {selectedAuditLog && (
                 <>
                   <div className="p-6 pb-4 border-b bg-card shrink-0">
@@ -3936,8 +3936,8 @@ export function RealtimeRanking() {
                     </DialogHeader>
                   </div>
 
-                  <div className="flex-1 min-h-0 overflow-y-auto bg-muted/30 dark:bg-muted/10">
-                    <div className="p-6 space-y-6 pb-8">
+                  <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-muted/30 dark:bg-muted/10 custom-scrollbar">
+                    <div className="p-6 space-y-6 pb-24">
                     {/* Stats */}
                     <div className="grid grid-cols-4 gap-4">
                       {[
