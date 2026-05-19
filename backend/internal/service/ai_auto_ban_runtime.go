@@ -9,7 +9,9 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +72,19 @@ type aiBanAssessment struct {
 	APIDurationMS    int64   `json:"api_duration_ms,omitempty"`
 	Model            string  `json:"model,omitempty"`
 	RawResponse      string  `json:"raw_response,omitempty"`
+}
+
+type aiBanModelError struct {
+	Message          string
+	RawResponse      string
+	PromptTokens     int
+	CompletionTokens int
+	Model            string
+	StatusCode       int
+}
+
+func (e *aiBanModelError) Error() string {
+	return e.Message
 }
 
 type aiBanProtection struct {
@@ -439,23 +454,31 @@ func (s *AIAutoBanService) assessUser(userID int64, window string, opts aiBanAss
 		if opts.writeHealth {
 			s.recordAIAPIFailure(err.Error())
 		}
+		failedAssessment := aiBanAssessment{
+			ShouldBan:     false,
+			RiskScore:     0,
+			Confidence:    0,
+			Action:        "monitor",
+			Reason:        "AI 审查调用失败: " + err.Error(),
+			APIDurationMS: time.Since(start).Milliseconds(),
+		}
+		var modelErr *aiBanModelError
+		if errors.As(err, &modelErr) {
+			failedAssessment.PromptTokens = modelErr.PromptTokens
+			failedAssessment.CompletionTokens = modelErr.CompletionTokens
+			failedAssessment.Model = modelErr.Model
+			failedAssessment.RawResponse = modelErr.RawResponse
+		}
 		return map[string]interface{}{
-			"user_id":   userID,
-			"username":  username,
-			"window":    window,
-			"protected": false,
-			"skipped":   false,
-			"action":    "error",
-			"message":   err.Error(),
-			"metrics":   buildAIBanMetrics(analysis, excludedRatio),
-			"assessment": assessmentToMap(aiBanAssessment{
-				ShouldBan:     false,
-				RiskScore:     0,
-				Confidence:    0,
-				Action:        "monitor",
-				Reason:        "AI 审查调用失败: " + err.Error(),
-				APIDurationMS: time.Since(start).Milliseconds(),
-			}),
+			"user_id":    userID,
+			"username":   username,
+			"window":     window,
+			"protected":  false,
+			"skipped":    false,
+			"action":     "error",
+			"message":    err.Error(),
+			"metrics":    buildAIBanMetrics(analysis, excludedRatio),
+			"assessment": assessmentToMap(failedAssessment),
 		}, err
 	}
 	if opts.writeHealth {
@@ -545,6 +568,33 @@ func compactAIBanAnalysis(analysis map[string]interface{}) map[string]interface{
 }
 
 func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt string) (aiBanAssessment, error) {
+	assessment, err := s.sendAIBanChatCompletion(config, prompt, true)
+	if err == nil {
+		return assessment, nil
+	}
+
+	jsonMode := true
+	if isJSONModeUnsupported(err) {
+		jsonMode = false
+		assessment, err = s.sendAIBanChatCompletion(config, prompt, false)
+		if err == nil {
+			return assessment, nil
+		}
+	}
+
+	if isAIBanParseError(err) {
+		retryPrompt := prompt + "\n\n上一次回复不是合法 JSON。请重新输出一个严格 JSON 对象：所有 key 必须使用双引号，字段之间必须有逗号，不要输出 Markdown、解释、注释或多余文本。"
+		retryAssessment, retryErr := s.sendAIBanChatCompletion(config, retryPrompt, jsonMode)
+		if retryErr == nil {
+			return retryAssessment, nil
+		}
+		return aiBanAssessment{}, retryErr
+	}
+
+	return aiBanAssessment{}, err
+}
+
+func (s *AIAutoBanService) sendAIBanChatCompletion(config map[string]interface{}, prompt string, jsonMode bool) (aiBanAssessment, error) {
 	baseURL := configString(config, "base_url")
 	apiKey := configString(config, "api_key")
 	model := configString(config, "model")
@@ -552,11 +602,14 @@ func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt 
 	payload := map[string]interface{}{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "你是严格保守的风控 JSON 审查器。"},
+			{"role": "system", "content": "你是严格保守的风控 JSON 审查器。必须只输出一个严格合法 JSON 对象。"},
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.1,
 		"max_tokens":  500,
+	}
+	if jsonMode {
+		payload["response_format"] = map[string]string{"type": "json_object"}
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -582,7 +635,12 @@ func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt 
 		return aiBanAssessment{}, fmt.Errorf("读取 AI 响应失败: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return aiBanAssessment{}, fmt.Errorf("AI 请求失败 (%d): %s", resp.StatusCode, trimForMessage(string(body), 300))
+		raw := trimForMessage(string(body), 1000)
+		return aiBanAssessment{}, &aiBanModelError{
+			Message:     fmt.Sprintf("AI 请求失败 (%d): %s", resp.StatusCode, trimForMessage(raw, 300)),
+			RawResponse: raw,
+			StatusCode:  resp.StatusCode,
+		}
 	}
 
 	var chatResp struct {
@@ -606,7 +664,13 @@ func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt 
 
 	assessment, err := parseAIBanAssessment(chatResp.Choices[0].Message.Content)
 	if err != nil {
-		return aiBanAssessment{}, err
+		return aiBanAssessment{}, &aiBanModelError{
+			Message:          err.Error(),
+			RawResponse:      trimForMessage(chatResp.Choices[0].Message.Content, 1000),
+			PromptTokens:     chatResp.Usage.PromptTokens,
+			CompletionTokens: chatResp.Usage.CompletionTokens,
+			Model:            chatResp.Model,
+		}
 	}
 	assessment.Model = chatResp.Model
 	if assessment.Model == "" {
@@ -618,6 +682,27 @@ func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt 
 	return assessment, nil
 }
 
+func isJSONModeUnsupported(err error) bool {
+	var modelErr *aiBanModelError
+	if !errors.As(err, &modelErr) {
+		return false
+	}
+	if modelErr.StatusCode != http.StatusBadRequest && modelErr.StatusCode != http.StatusUnprocessableEntity {
+		return false
+	}
+	msg := strings.ToLower(modelErr.Message + " " + modelErr.RawResponse)
+	return strings.Contains(msg, "response_format") ||
+		strings.Contains(msg, "json_object") ||
+		strings.Contains(msg, "json mode") ||
+		strings.Contains(msg, "unsupported") ||
+		strings.Contains(msg, "not support")
+}
+
+func isAIBanParseError(err error) bool {
+	var modelErr *aiBanModelError
+	return errors.As(err, &modelErr) && modelErr.RawResponse != "" && modelErr.StatusCode == 0
+}
+
 func parseAIBanAssessment(content string) (aiBanAssessment, error) {
 	jsonText := extractJSONObject(content)
 	if jsonText == "" {
@@ -626,9 +711,22 @@ func parseAIBanAssessment(content string) (aiBanAssessment, error) {
 
 	var raw map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonText), &raw); err != nil {
+		repaired := repairAIBanJSON(jsonText)
+		if repaired != jsonText {
+			if repairErr := json.Unmarshal([]byte(repaired), &raw); repairErr == nil {
+				return assessmentFromRaw(raw), nil
+			}
+		}
+		if loose, ok := parseAIBanLooseFields(jsonText); ok {
+			return loose, nil
+		}
 		return aiBanAssessment{}, fmt.Errorf("解析 AI JSON 失败: %w", err)
 	}
 
+	return assessmentFromRaw(raw), nil
+}
+
+func assessmentFromRaw(raw map[string]interface{}) aiBanAssessment {
 	assessment := aiBanAssessment{
 		ShouldBan:  configBool(raw, "should_ban", false),
 		RiskScore:  toFloat64(raw["risk_score"]),
@@ -645,7 +743,7 @@ func parseAIBanAssessment(content string) (aiBanAssessment, error) {
 	if assessment.Action == "" {
 		assessment.Action = "monitor"
 	}
-	return assessment, nil
+	return assessment
 }
 
 func extractJSONObject(content string) string {
@@ -662,6 +760,81 @@ func extractJSONObject(content string) string {
 	end := strings.LastIndex(text, "}")
 	if start >= 0 && end > start {
 		return text[start : end+1]
+	}
+	return ""
+}
+
+func repairAIBanJSON(text string) string {
+	repaired := strings.NewReplacer(
+		"“", "\"",
+		"”", "\"",
+		"‘", "'",
+		"’", "'",
+	).Replace(strings.TrimSpace(text))
+	repaired = regexp.MustCompile(`'([^'\\]*(?:\\.[^'\\]*)*)'`).ReplaceAllString(repaired, `"$1"`)
+	repaired = regexp.MustCompile(`([,{]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:`).ReplaceAllString(repaired, `$1"$2":`)
+	repaired = regexp.MustCompile(`,\s*([}\]])`).ReplaceAllString(repaired, `$1`)
+	repaired = insertMissingJSONCommas(repaired)
+	return repaired
+}
+
+func insertMissingJSONCommas(text string) string {
+	valueRE := regexp.MustCompile(`(?s)(true|false|null|-?\d+(?:\.\d+)?|"[^"\\]*(?:\\.[^"\\]*)*")(\s+)("[A-Za-z_][A-Za-z0-9_]*"\s*:)`)
+	previous := ""
+	current := text
+	for previous != current {
+		previous = current
+		current = valueRE.ReplaceAllString(current, `$1,$3`)
+	}
+	return current
+}
+
+func parseAIBanLooseFields(text string) (aiBanAssessment, bool) {
+	normalized := repairAIBanJSON(text)
+	assessment := aiBanAssessment{
+		ShouldBan:  looseBoolField(normalized, "should_ban"),
+		RiskScore:  looseNumberField(normalized, "risk_score"),
+		Confidence: looseNumberField(normalized, "confidence"),
+		Action:     strings.ToLower(strings.TrimSpace(looseStringField(normalized, "action"))),
+		Reason:     strings.TrimSpace(looseStringField(normalized, "reason")),
+	}
+	if assessment.Confidence > 1 {
+		assessment.Confidence = assessment.Confidence / 100
+	}
+	if assessment.Reason == "" {
+		assessment.Reason = "AI 返回了非标准 JSON，已按字段容错解析"
+	}
+	if assessment.Action == "" {
+		assessment.Action = "monitor"
+	}
+	hasSignal := regexp.MustCompile(`(?i)["']?(should_ban|risk_score|confidence|action|reason)["']?\s*:`).MatchString(normalized)
+	return assessment, hasSignal
+}
+
+func looseBoolField(text, key string) bool {
+	re := regexp.MustCompile(`(?i)["']?` + regexp.QuoteMeta(key) + `["']?\s*:\s*(true|false)`)
+	match := re.FindStringSubmatch(text)
+	return len(match) > 1 && strings.EqualFold(match[1], "true")
+}
+
+func looseNumberField(text, key string) float64 {
+	re := regexp.MustCompile(`(?i)["']?` + regexp.QuoteMeta(key) + `["']?\s*:\s*([-+]?\d+(?:\.\d+)?)\s*%?`)
+	match := re.FindStringSubmatch(text)
+	if len(match) <= 1 {
+		return 0
+	}
+	value, _ := strconv.ParseFloat(match[1], 64)
+	return value
+}
+
+func looseStringField(text, key string) string {
+	quoted := regexp.MustCompile(`(?is)["']?` + regexp.QuoteMeta(key) + `["']?\s*:\s*["']([^"']+)["']`)
+	if match := quoted.FindStringSubmatch(text); len(match) > 1 {
+		return match[1]
+	}
+	unquoted := regexp.MustCompile(`(?im)["']?` + regexp.QuoteMeta(key) + `["']?\s*:\s*([^,\n\r}]+)`)
+	if match := unquoted.FindStringSubmatch(text); len(match) > 1 {
+		return strings.TrimSpace(match[1])
 	}
 	return ""
 }
@@ -713,7 +886,7 @@ func decideAIBanAction(a aiBanAssessment) string {
 }
 
 func assessmentToMap(a aiBanAssessment) map[string]interface{} {
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"should_ban":        a.ShouldBan,
 		"model_should_ban":  a.ModelShouldBan,
 		"risk_score":        a.RiskScore,
@@ -725,6 +898,10 @@ func assessmentToMap(a aiBanAssessment) map[string]interface{} {
 		"api_duration_ms":   a.APIDurationMS,
 		"model":             a.Model,
 	}
+	if a.RawResponse != "" {
+		result["raw_response"] = trimForMessage(a.RawResponse, 1000)
+	}
+	return result
 }
 
 func buildAIBanMetrics(analysis map[string]interface{}, excludedRatio float64) map[string]interface{} {

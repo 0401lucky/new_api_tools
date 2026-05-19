@@ -2,8 +2,10 @@ package service
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,6 +149,98 @@ func TestParseAIBanAssessmentJSONVariants(t *testing.T) {
 
 	if _, err := parseAIBanAssessment("不是 JSON"); err == nil {
 		t.Fatal("invalid json should fail")
+	}
+}
+
+func TestParseAIBanAssessmentRepairsCommonModelJSON(t *testing.T) {
+	content := `{
+		should_ban: false
+		risk_score: 2,
+		confidence: 85,
+		action: normal,
+		reason: "单IP单Token稳定调用"
+	}`
+	got, err := parseAIBanAssessment(content)
+	if err != nil {
+		t.Fatalf("repair parse failed: %v", err)
+	}
+	if got.ShouldBan || got.RiskScore != 2 || got.Confidence != 0.85 || got.Action != "normal" {
+		t.Fatalf("unexpected repaired assessment: %+v", got)
+	}
+}
+
+func TestCallAIBanModelFallsBackWhenJSONModeUnsupported(t *testing.T) {
+	clearAIBanTestCache(t)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		body, _ := io.ReadAll(r.Body)
+		if calls == 1 {
+			if !strings.Contains(string(body), "response_format") {
+				t.Fatalf("first call should request json mode: %s", string(body))
+			}
+			http.Error(w, `{"error":{"message":"response_format json_object is unsupported"}}`, http.StatusBadRequest)
+			return
+		}
+		if strings.Contains(string(body), "response_format") {
+			t.Fatalf("fallback call should omit response_format: %s", string(body))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "gpt-test",
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": `{"should_ban":false,"risk_score":2,"confidence":0.9,"action":"normal","reason":"正常"}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	got, err := (&AIAutoBanService{}).callAIBanModel(map[string]interface{}{
+		"base_url": server.URL,
+		"api_key":  "test-key",
+		"model":    "gpt-test",
+	}, "审查")
+	if err != nil {
+		t.Fatalf("call should fallback: %v", err)
+	}
+	if calls != 2 || got.Action != "normal" {
+		t.Fatalf("unexpected fallback result calls=%d got=%+v", calls, got)
+	}
+}
+
+func TestCallAIBanModelRetriesAfterParseFailure(t *testing.T) {
+	clearAIBanTestCache(t)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		content := "我认为这个用户正常，但我不输出 JSON"
+		if calls == 2 {
+			content = `{"should_ban":false,"risk_score":3,"confidence":0.8,"action":"normal","reason":"重试后正常"}`
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "gpt-test",
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": content}},
+			},
+			"usage": map[string]int{
+				"prompt_tokens":     10,
+				"completion_tokens": 5,
+			},
+		})
+	}))
+	defer server.Close()
+
+	got, err := (&AIAutoBanService{}).callAIBanModel(map[string]interface{}{
+		"base_url": server.URL,
+		"api_key":  "test-key",
+		"model":    "gpt-test",
+	}, "审查")
+	if err != nil {
+		t.Fatalf("call should retry parse failure: %v", err)
+	}
+	if calls != 2 || got.Reason != "重试后正常" || got.PromptTokens != 10 {
+		t.Fatalf("unexpected retry result calls=%d got=%+v", calls, got)
 	}
 }
 
