@@ -1,15 +1,38 @@
-import { useState, useEffect } from 'react'
-import { Login, Layout, TabType, Generator, History, TopUps, Dashboard, Redemptions, Analytics, UserManagement, RealtimeRanking, IPAnalysis, ModelStatusMonitor, AutoGroup, Tokens } from './components'
+import { useState, useEffect, lazy, Suspense } from 'react'
+import { Login, Layout, TabType, Dashboard } from './components'
 import { useAuth } from './contexts/AuthContext'
 import { WarmupScreen } from './components/WarmupScreen'
 
+// 懒加载非首屏 tab — 显著降低初始包体积
+const TopUps = lazy(() => import('./components/TopUps').then(m => ({ default: m.TopUps })))
+const RedemptionCenter = lazy(() => import('./components/RedemptionCenter').then(m => ({ default: m.RedemptionCenter })))
+const Analytics = lazy(() => import('./components/Analytics').then(m => ({ default: m.Analytics })))
+const UserManagement = lazy(() => import('./components/UserManagement').then(m => ({ default: m.UserManagement })))
+const RealtimeRanking = lazy(() => import('./components/RealtimeRanking').then(m => ({ default: m.RealtimeRanking })))
+const IPAnalysis = lazy(() => import('./components/IPAnalysis').then(m => ({ default: m.IPAnalysis })))
+const ModelStatusMonitor = lazy(() => import('./components/ModelStatusMonitor').then(m => ({ default: m.ModelStatusMonitor })))
+const AutoGroup = lazy(() => import('./components/AutoGroup').then(m => ({ default: m.AutoGroup })))
+const Tokens = lazy(() => import('./components/Tokens').then(m => ({ default: m.Tokens })))
+const AbuseBroadcast = lazy(() => import('./components/AbuseBroadcast').then(m => ({ default: m.AbuseBroadcast })))
+
 // Valid tabs
-const validTabs: TabType[] = ['dashboard', 'topups', 'risk', 'ip-analysis', 'analytics', 'model-status', 'users', 'tokens', 'auto-group', 'generator', 'redemptions', 'history']
+const validTabs: TabType[] = ['dashboard', 'topups', 'risk', 'abuse-broadcast', 'ip-analysis', 'analytics', 'model-status', 'users', 'tokens', 'auto-group', 'redemptions']
+
+// 旧路径迁移：generator / history 现合并到 redemptions 内部 tab
+const legacyRedirects: Record<string, string> = {
+  generator: '/redemptions?view=generator',
+  history: '/redemptions?view=history',
+}
 
 // Get initial tab from URL pathname (supports sub-routes like /risk/ip)
 const getInitialTab = (): TabType => {
   const pathname = window.location.pathname.slice(1) // Remove leading /
   const mainPath = pathname.split('/')[0] // Get first segment for main tab
+
+  if (legacyRedirects[mainPath]) {
+    window.history.replaceState(null, '', legacyRedirects[mainPath])
+    return 'redemptions'
+  }
 
   if (validTabs.includes(mainPath as TabType)) {
     return mainPath as TabType
@@ -18,6 +41,10 @@ const getInitialTab = (): TabType => {
   const hash = window.location.hash.slice(1)
   // 处理 #risk/ip 等格式
   const hashMain = hash.split('/')[0].replace('risk-', 'risk/')
+  if (legacyRedirects[hashMain]) {
+    window.history.replaceState(null, '', legacyRedirects[hashMain])
+    return 'redemptions'
+  }
   if (validTabs.includes(hashMain as TabType)) {
     // 重定向到新路由
     const subPath = hash.includes('/') ? hash.split('/').slice(1).join('/') : ''
@@ -129,16 +156,14 @@ function App() {
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard />
-      case 'generator':
-        return <Generator />
       case 'redemptions':
-        return <Redemptions />
-      case 'history':
-        return <History />
+        return <RedemptionCenter />
       case 'topups':
         return <TopUps />
       case 'risk':
         return <RealtimeRanking />
+      case 'abuse-broadcast':
+        return <AbuseBroadcast />
       case 'ip-analysis':
         return <IPAnalysis />
       case 'analytics':
@@ -158,7 +183,15 @@ function App() {
 
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab} onLogout={logout}>
-      {renderContent()}
+      <Suspense
+        fallback={
+          <div className="min-h-[400px] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+          </div>
+        }
+      >
+        {renderContent()}
+      </Suspense>
     </Layout>
   )
 }

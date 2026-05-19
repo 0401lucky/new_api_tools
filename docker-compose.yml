@@ -13,7 +13,10 @@ services:
     image: ghcr.io/james-6-23/new_api_tools:latest
     container_name: newapi-tools
     ports:
-      - "${FRONTEND_PORT:-1145}:80"
+      # FRONTEND_BIND 控制端口绑定的网卡：
+      #   - 0.0.0.0（默认）：所有网卡可达，浏览器可直连 IP:1145
+      #   - 127.0.0.1     ：仅本机，需要在宿主机配 nginx 反代到 https://your-domain
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-1145}:80"
     environment:
       # 数据库配置 (Go 版本统一使用 SQL_DSN)
       - SQL_DSN=${SQL_DSN:-}
@@ -24,6 +27,9 @@ services:
       - DB_NAME=${DB_NAME:-}
       - DB_USER=${DB_USER:-}
       - DB_PASSWORD=${DB_PASSWORD:-}
+      # 连接池（可选）
+      - DB_MAX_OPEN_CONNS=${DB_MAX_OPEN_CONNS:-}
+      - DB_MAX_IDLE_CONNS=${DB_MAX_IDLE_CONNS:-}
       # 认证
       - API_KEY=${API_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
@@ -32,7 +38,9 @@ services:
       # Redis 缓存
       - REDIS_CONN_STRING=redis://:${REDIS_PASSWORD:-}@redis:6379/0
       # 服务配置
-      - SERVER_HOST=0.0.0.0
+      # SERVER_HOST 默认 127.0.0.1（仅供容器内 Nginx 反代访问，对外端口由 Nginx 暴露）
+      # 如需让其他容器/宿主机直连 Go 后端 8000，可在 .env 中改为 0.0.0.0（不推荐，安全风险）
+      - SERVER_HOST=${SERVER_HOST:-127.0.0.1}
       - SERVER_PORT=8000
       - TIMEZONE=${TIMEZONE:-Asia/Shanghai}
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -41,6 +49,10 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    # 用于 NewAPI 以 network_mode: host 部署的场景：DSN 中的 127.0.0.1
+    # 会被 deploy.sh 改写为 host.docker.internal，靠这条解析到宿主机网关。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy

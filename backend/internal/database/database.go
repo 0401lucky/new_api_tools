@@ -39,8 +39,16 @@ func Init(cfg *config.Config) (*Manager, error) {
 	}
 
 	// Configure connection pool
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(10)
+	maxOpen := cfg.DBMaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = 50
+	}
+	maxIdle := cfg.DBMaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = 15
+	}
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(3 * time.Minute)
 
@@ -68,6 +76,12 @@ func Get() *Manager {
 		panic("database not initialized, call database.Init() first")
 	}
 	return mgr
+}
+
+// SetForTesting overrides the package-level manager. Tests use this to inject
+// an in-memory SQLite backend or a stub Manager — production code never calls it.
+func SetForTesting(m *Manager) {
+	mgr = m
 }
 
 // Close closes the database connection

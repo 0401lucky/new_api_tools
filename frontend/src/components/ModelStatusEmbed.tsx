@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '../lib/utils'
-import { Loader2, Timer, Activity, Zap, Sun, Moon, Minimize2, Terminal, Leaf, Droplets, Command, LayoutGrid, Bot, MessageSquareQuote, Triangle, Sparkles, CreditCard, GitBranch, Gamepad2, Rocket, Brain, Layers, Tag, KeyRound } from 'lucide-react'
+import { Loader2, Timer, Activity, Zap, Sun, Moon, Minimize2, Terminal, Leaf, Droplets, Command, LayoutGrid, Bot, MessageSquareQuote, Triangle, Sparkles, CreditCard, GitBranch, Gamepad2, Rocket, Brain, Layers, Tag, KeyRound, ChevronDown } from 'lucide-react'
 import {
   OpenAI, Gemini, DeepSeek, SiliconCloud, Groq, Ollama, Claude, Mistral,
   Minimax, Baichuan, Moonshot, Spark, Qwen, Yi, Hunyuan, Stepfun, ZeroOne,
@@ -40,6 +41,8 @@ interface EmbedTokenGroup {
   group_name: string
   model_count: number
   models: string[]
+  description?: string
+  ratio?: number
 }
 
 // Custom model group (loaded from backend)
@@ -48,6 +51,46 @@ interface EmbedCustomGroup {
   name: string
   icon?: string
   models: string[]
+}
+
+// 厂商关键字映射：vendor 分组配置了 icon 时，名字含这些关键字的模型自动归入。
+const EMBED_VENDOR_KEYWORDS: Record<string, string[]> = {
+  openai: ['gpt', 'openai', 'o1', 'o3', 'chatgpt', 'dall-e', 'whisper', 'tts'],
+  claude: ['claude', 'anthropic'],
+  gemini: ['gemini', 'gemma', 'bard'],
+  deepseek: ['deepseek'],
+  meta: ['llama', 'meta'],
+  mistral: ['mistral', 'mixtral', 'codestral', 'pixtral'],
+  qwen: ['qwen', 'tongyi'],
+  zhipu: ['glm', 'chatglm', 'zhipu'],
+  moonshot: ['moonshot', 'kimi'],
+  kimi: ['kimi', 'moonshot'],
+  doubao: ['doubao', 'bytedance'],
+  minimax: ['minimax', 'abab'],
+  baichuan: ['baichuan'],
+  yi: ['yi-', '01-ai', 'zero-one'],
+  spark: ['spark', 'xunfei'],
+  hunyuan: ['hunyuan', 'tencent'],
+  stepfun: ['stepfun', 'step-'],
+  wenxin: ['wenxin', 'ernie', 'baidu'],
+  cohere: ['cohere', 'command'],
+  perplexity: ['perplexity', 'pplx', 'sonar'],
+  groq: ['groq'],
+  ollama: ['ollama'],
+  together: ['together'],
+  openrouter: ['openrouter'],
+  siliconcloud: ['siliconcloud', 'silicon'],
+  coze: ['coze'],
+  cerebras: ['cerebras'],
+}
+
+function embedModelMatchesGroup(modelName: string, group: EmbedCustomGroup): boolean {
+  if (group.models.includes(modelName)) return true
+  if (!group.icon) return false
+  const keywords = EMBED_VENDOR_KEYWORDS[group.icon]
+  if (!keywords) return false
+  const lower = modelName.toLowerCase()
+  return keywords.some(k => lower.includes(k))
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -916,7 +959,17 @@ export function ModelStatusEmbed({
   // Fetch model statuses
   // Embed page always uses cache to reduce database load
   const fetchModelStatuses = useCallback(async () => {
-    if (selectedModels.length === 0) {
+    // 选中某个密钥分组时，自动把分组下全部模型并入请求集合，
+    // 用户无需手工把每个模型加进监控列表也能看到分组下的状态。
+    const tokenGroupModels = (() => {
+      if (!groupFilter.startsWith('token:')) return [] as string[]
+      const name = groupFilter.slice(6)
+      const tg = tokenGroups.find(g => g.group_name === name)
+      return tg ? tg.models : []
+    })()
+    const fetchSet = Array.from(new Set([...selectedModels, ...tokenGroupModels]))
+
+    if (fetchSet.length === 0) {
       setModelStatuses([])
       setLoading(false)
       return
@@ -926,7 +979,7 @@ export function ModelStatusEmbed({
       const response = await fetch(`${apiUrl}/api/model-status/embed/status/batch?window=${timeWindow}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedModels),
+        body: JSON.stringify(fetchSet),
       })
       const data = await response.json()
       if (data.success) {
@@ -938,13 +991,11 @@ export function ModelStatusEmbed({
     } finally {
       setLoading(false)
     }
-  }, [apiUrl, selectedModels, timeWindow])
+  }, [apiUrl, selectedModels, timeWindow, groupFilter, tokenGroups])
 
   useEffect(() => {
-    if (selectedModels.length > 0) {
-      fetchModelStatuses()
-    }
-  }, [fetchModelStatuses, selectedModels])
+    fetchModelStatuses()
+  }, [fetchModelStatuses])
 
   // Auto refresh with visibility change handling
   // When page is in background, browser throttles setInterval
@@ -1119,7 +1170,7 @@ export function ModelStatusEmbed({
           const activeModels = modelStatuses.filter(m => m.total_requests > 0)
           const groupCountMap: Record<string, number> = { all: activeModels.length }
           customGroups.forEach(g => {
-            groupCountMap[g.id] = activeModels.filter(m => g.models.includes(m.model_name)).length
+            groupCountMap[g.id] = activeModels.filter(m => embedModelMatchesGroup(m.model_name, g)).length
           })
           tokenGroups.forEach(g => {
             groupCountMap[`token:${g.group_name}`] = activeModels.filter(m => g.models.includes(m.model_name)).length
@@ -1187,31 +1238,21 @@ export function ModelStatusEmbed({
                   </button>
                 )
               })}
-              {/* Token Group Separator + Tabs */}
-              {tokenGroups.length > 0 && customGroups.length > 0 && (
-                <div className="w-px h-4 bg-current opacity-20 flex-shrink-0 mx-0.5" />
+              {/* Token Group Dropdown (密钥分组数量多时用下拉避免横向溢出) */}
+              {tokenGroups.length > 0 && (
+                <>
+                  {customGroups.length > 0 && (
+                    <div className="w-px h-4 bg-current opacity-20 flex-shrink-0 mx-0.5" />
+                  )}
+                  <TokenGroupDropdown
+                    groups={tokenGroups}
+                    countMap={groupCountMap}
+                    value={groupFilter}
+                    onChange={setGroupFilter}
+                    styles={styles}
+                  />
+                </>
               )}
-              {tokenGroups.map((tg) => {
-                const filterId = `token:${tg.group_name}`
-                const isActive = groupFilter === filterId
-                const count = groupCountMap[filterId] || 0
-                return (
-                  <button
-                    key={filterId}
-                    onClick={() => setGroupFilter(filterId)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border transition-all whitespace-nowrap flex-shrink-0",
-                      isActive
-                        ? "bg-blue-500/20 border-blue-500/40 text-blue-400 font-semibold shadow-sm"
-                        : cn("border-transparent opacity-60 hover:opacity-100", styles.statsText)
-                    )}
-                  >
-                    <KeyRound size={12} className="flex-shrink-0" />
-                    {tg.group_name}
-                    <span className="opacity-70 tabular-nums">{count}</span>
-                  </button>
-                )
-              })}
             </div>
           )
         })()}
@@ -1230,7 +1271,7 @@ export function ModelStatusEmbed({
                   return tg ? tg.models.includes(model.model_name) : true
                 }
                 const group = customGroups.find(g => g.id === groupFilter)
-                return group ? group.models.includes(model.model_name) : true
+                return group ? embedModelMatchesGroup(model.model_name, group) : true
               })
               .map(model => (
               <EmbedModelCard
@@ -1423,6 +1464,217 @@ function EmbedModelCard({ model, theme, styles, onHover, onLeave }: EmbedModelCa
           <span>{isMinimal ? 'now' : timeLabels[2]}</span>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// Token Group Dropdown (rich popover with description + ratio badge)
+// ============================================================================
+
+interface TokenGroupDropdownProps {
+  groups: EmbedTokenGroup[]
+  countMap: Record<string, number>
+  value: string
+  onChange: (value: string) => void
+  styles: typeof themeStyles.obsidian
+}
+
+function ratioStyles(ratio: number | undefined): string {
+  if (ratio === undefined) return ''
+  if (ratio < 1) return 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+  if (ratio === 1) return 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30'
+  return 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30'
+}
+
+function TokenGroupDropdown({ groups, countMap, value, onChange, styles }: TokenGroupDropdownProps) {
+  const [open, setOpen] = useState(false)
+  const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  const isActive = value.startsWith('token:')
+  const activeName = isActive ? value.slice(6) : ''
+  const activeCount = isActive ? (countMap[value] || 0) : 0
+
+  // 按倍率降序排序：高倍率优先；缺失倍率的分组按名称字母排序后置底
+  const sortedGroups = useMemo(() => {
+    return [...groups].sort((a, b) => {
+      const aHas = a.ratio !== undefined
+      const bHas = b.ratio !== undefined
+      if (aHas && bHas) return (b.ratio as number) - (a.ratio as number)
+      if (aHas) return -1
+      if (bHas) return 1
+      return a.group_name.localeCompare(b.group_name)
+    })
+  }, [groups])
+
+  // 打开时计算 trigger 位置（用于 portal 内 fixed 定位）
+  useEffect(() => {
+    if (!open) {
+      setTriggerRect(null)
+      return
+    }
+    const updateRect = () => {
+      if (triggerRef.current) {
+        setTriggerRect(triggerRef.current.getBoundingClientRect())
+      }
+    }
+    updateRect()
+    window.addEventListener('resize', updateRect)
+    window.addEventListener('scroll', updateRect, true)
+    return () => {
+      window.removeEventListener('resize', updateRect)
+      window.removeEventListener('scroll', updateRect, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      const inTrigger = ref.current?.contains(target)
+      const inPanel = panelRef.current?.contains(target)
+      if (!inTrigger && !inPanel) {
+        setOpen(false)
+      }
+    }
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [open])
+
+  const handleSelect = (filterId: string) => {
+    onChange(filterId)
+    setOpen(false)
+  }
+
+  // 计算 panel 在视口里的位置；若右侧空间不够则向左对齐
+  const panelStyle: React.CSSProperties = useMemo(() => {
+    if (!triggerRect) return { display: 'none' }
+    const PANEL_WIDTH_HINT = 320 // min-w 18rem ≈ 288，留点余量
+    const overflowRight = triggerRect.left + PANEL_WIDTH_HINT > window.innerWidth - 16
+    const left = overflowRight
+      ? Math.max(16, triggerRect.right - PANEL_WIDTH_HINT)
+      : triggerRect.left
+    return {
+      position: 'fixed',
+      top: triggerRect.bottom + 6,
+      left,
+    }
+  }, [triggerRect])
+
+  return (
+    <div ref={ref} className="relative flex-shrink-0">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-xs font-medium rounded-full border transition-all whitespace-nowrap",
+          "focus:outline-none focus:ring-2 focus:ring-current/20",
+          isActive
+            ? "bg-blue-500/20 border-blue-500/40 text-blue-400 font-semibold shadow-sm"
+            : cn("border-current/20 opacity-70 hover:opacity-100", styles.statsText)
+        )}
+      >
+        <KeyRound size={12} className="flex-shrink-0" />
+        <span>{isActive ? activeName : '密钥分组'}</span>
+        <span className="opacity-70 tabular-nums">
+          {isActive ? activeCount : groups.length}
+        </span>
+        <ChevronDown size={12} className={cn("flex-shrink-0 opacity-60 transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && triggerRect && createPortal(
+        <div
+          ref={panelRef}
+          role="listbox"
+          style={panelStyle}
+          className={cn(
+            "min-w-[18rem] max-w-[28rem] max-h-[24rem] overflow-y-auto rounded-lg shadow-xl",
+            styles.tooltip,
+            // 放在 styles.tooltip 后让 tailwind-merge 优先采用这里的值
+            "p-1 z-[10001]"
+          )}
+        >
+          {/* "全部" option clears the token filter */}
+          <button
+            type="button"
+            role="option"
+            aria-selected={!isActive}
+            onClick={() => handleSelect('all')}
+            className={cn(
+              "w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2",
+              !isActive ? "bg-blue-500/10 text-blue-500" : "hover:bg-current/5"
+            )}
+          >
+            <Layers size={14} className="flex-shrink-0 opacity-60" />
+            <span className={cn("text-sm font-medium", styles.tooltipValue)}>全部</span>
+            <span className={cn("ml-auto text-xs tabular-nums", styles.tooltipLabel)}>
+              {countMap.all ?? 0}
+            </span>
+          </button>
+
+          <div className="h-px bg-current/10 my-1 mx-2" />
+
+          {sortedGroups.map((g) => {
+            const filterId = `token:${g.group_name}`
+            const selected = value === filterId
+            const count = countMap[filterId] || 0
+            return (
+              <button
+                type="button"
+                role="option"
+                key={filterId}
+                aria-selected={selected}
+                onClick={() => handleSelect(filterId)}
+                className={cn(
+                  "w-full text-left px-3 py-2 rounded-md transition-colors flex items-start gap-3",
+                  selected ? "bg-blue-500/10" : "hover:bg-current/5"
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className={cn("text-sm font-semibold truncate", styles.tooltipValue)}>
+                    {g.group_name}
+                  </div>
+                  {g.description && (
+                    <div className={cn("text-xs mt-0.5 line-clamp-2 break-all", styles.tooltipLabel)}>
+                      {g.description}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  {g.ratio !== undefined && (
+                    <span className={cn(
+                      "px-1.5 py-0.5 text-[10px] font-medium rounded border tabular-nums whitespace-nowrap",
+                      ratioStyles(g.ratio),
+                    )}>
+                      {g.ratio}x 倍率
+                    </span>
+                  )}
+                  <span
+                    className={cn("text-[10px] tabular-nums opacity-70", styles.tooltipLabel)}
+                    title={`筛选后可见 ${count} 个模型，分组共关联 ${g.model_count} 个`}
+                  >
+                    {count} 个模型
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

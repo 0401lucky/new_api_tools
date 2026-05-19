@@ -3,10 +3,16 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/new-api-tools/backend/internal/models"
 	"github.com/new-api-tools/backend/internal/service"
+)
+
+const (
+	confirmTextSoftDelete = "注销用户"
+	confirmTextHardDelete = "彻底删除"
 )
 
 func RegisterUserManagementRoutes(r *gin.RouterGroup) {
@@ -89,6 +95,19 @@ func DeleteUser(c *gin.Context) {
 	}
 
 	hardDelete := c.DefaultQuery("hard_delete", "false") == "true"
+	var req struct {
+		ConfirmText string `json:"confirm_text"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	expectedConfirmText := confirmTextSoftDelete
+	if hardDelete {
+		expectedConfirmText = confirmTextHardDelete
+	}
+	if !requireDeleteConfirmText(c, req.ConfirmText, expectedConfirmText) {
+		return
+	}
+
 	svc := service.NewUserManagementService()
 	affected, err := svc.DeleteUser(userID, hardDelete)
 	if err != nil {
@@ -117,6 +136,7 @@ func BatchDeleteInactiveUsers(c *gin.Context) {
 		ActivityLevel string `json:"activity_level"`
 		DryRun        bool   `json:"dry_run"`
 		HardDelete    bool   `json:"hard_delete"`
+		ConfirmText   string `json:"confirm_text"`
 	}
 	req.ActivityLevel = "very_inactive"
 	req.DryRun = true
@@ -124,6 +144,16 @@ func BatchDeleteInactiveUsers(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResp("INVALID_PARAMS", "Invalid request body", err.Error()))
 		return
+	}
+
+	if !req.DryRun {
+		expectedConfirmText := confirmTextSoftDelete
+		if req.HardDelete {
+			expectedConfirmText = confirmTextHardDelete
+		}
+		if !requireDeleteConfirmText(c, req.ConfirmText, expectedConfirmText) {
+			return
+		}
 	}
 
 	svc := service.NewUserManagementService()
@@ -150,27 +180,54 @@ func GetSoftDeletedCount(c *gin.Context) {
 // POST /api/users/soft-deleted/purge
 func PurgeSoftDeletedUsers(c *gin.Context) {
 	var req struct {
-		DryRun bool `json:"dry_run"`
+		DryRun      bool   `json:"dry_run"`
+		ConfirmText string `json:"confirm_text"`
 	}
 	req.DryRun = true
 	c.ShouldBindJSON(&req)
 
+	if !req.DryRun && !requireDeleteConfirmText(c, req.ConfirmText, confirmTextHardDelete) {
+		return
+	}
+
 	svc := service.NewUserManagementService()
+	if req.DryRun {
+		result, err := svc.PreviewSoftDeletedUsers()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResp("DELETE_ERROR", err.Error(), ""))
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "预览完成",
+			"data":    result,
+		})
+		return
+	}
+
 	affected, err := svc.PurgeSoftDeleted(req.DryRun)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResp("DELETE_ERROR", err.Error(), ""))
 		return
 	}
 
-	message := "预览完成"
-	if !req.DryRun {
-		message = "清理完成"
-	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": message,
+		"message": "清理完成",
 		"data":    gin.H{"affected": affected},
 	})
+}
+
+func requireDeleteConfirmText(c *gin.Context, got, expected string) bool {
+	if strings.TrimSpace(got) == expected {
+		return true
+	}
+	c.JSON(http.StatusBadRequest, models.ErrorResp(
+		"CONFIRM_TEXT_REQUIRED",
+		"请输入 "+expected+" 以确认该高风险操作",
+		"",
+	))
+	return false
 }
 
 // POST /api/users/:user_id/ban

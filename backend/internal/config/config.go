@@ -30,6 +30,8 @@ type Config struct {
 	// Database
 	SQLDSN         string         `json:"sql_dsn"`
 	DatabaseEngine DatabaseEngine `json:"database_engine"`
+	DBMaxOpenConns int            `json:"db_max_open_conns"`
+	DBMaxIdleConns int            `json:"db_max_idle_conns"`
 
 	// Redis
 	RedisConnString string `json:"redis_conn_string"`
@@ -64,11 +66,13 @@ func Load() *Config {
 	cfg = &Config{
 		// Server defaults (support both SERVER_PORT/PORT and SERVER_HOST/HOST)
 		ServerPort: getEnvIntMulti([]string{"SERVER_PORT", "PORT"}, 8000),
-		ServerHost: getEnvStrMulti([]string{"SERVER_HOST", "HOST"}, "0.0.0.0"),
+		ServerHost: getEnvStrMulti([]string{"SERVER_HOST", "HOST"}, "127.0.0.1"),
 		TimeZone:   getEnvStrMulti([]string{"TIMEZONE", "TZ"}, "Asia/Shanghai"),
 
 		// Database
-		SQLDSN: getEnvStr("SQL_DSN", ""),
+		SQLDSN:         getEnvStr("SQL_DSN", ""),
+		DBMaxOpenConns: getEnvInt("DB_MAX_OPEN_CONNS", 50),
+		DBMaxIdleConns: getEnvInt("DB_MAX_IDLE_CONNS", 15),
 
 		// Redis
 		RedisConnString: getEnvStr("REDIS_CONN_STRING", ""),
@@ -251,6 +255,18 @@ func getEnvInt(key string, defaultVal int) int {
 	if val := os.Getenv(key); val != "" {
 		if i, err := strconv.Atoi(val); err == nil {
 			return i
+		}
+	}
+	return defaultVal
+}
+
+func getEnvBool(key string, defaultVal bool) bool {
+	if val := os.Getenv(key); val != "" {
+		switch strings.ToLower(strings.TrimSpace(val)) {
+		case "1", "true", "yes", "y", "on":
+			return true
+		case "0", "false", "no", "n", "off":
+			return false
 		}
 	}
 	return defaultVal

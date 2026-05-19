@@ -510,6 +510,27 @@ func (s *UserManagementService) PurgeSoftDeleted(dryRun bool) (int64, error) {
 	return affected, nil
 }
 
+// PreviewSoftDeletedUsers returns count and sample usernames for the purge dialog.
+func (s *UserManagementService) PreviewSoftDeletedUsers() (map[string]interface{}, error) {
+	count, err := s.GetSoftDeletedCount()
+	if err != nil {
+		return nil, err
+	}
+
+	users, err := s.previewUsers("SELECT id, username FROM users WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id DESC LIMIT 20")
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"dry_run":        true,
+		"count":          count,
+		"affected":       count,
+		"affected_count": count,
+		"users":          users,
+	}, nil
+}
+
 // BatchDeleteInactiveUsers deletes inactive users
 func (s *UserManagementService) BatchDeleteInactiveUsers(activityLevel string, dryRun, hardDelete bool) (map[string]interface{}, error) {
 	now := time.Now()
@@ -521,10 +542,10 @@ func (s *UserManagementService) BatchDeleteInactiveUsers(activityLevel string, d
 		condition = "request_count = 0"
 	case ActivityVeryInactive:
 		threshold := nowUnix - InactiveThreshold
-		condition = fmt.Sprintf("request_count > 0 AND id NOT IN (SELECT DISTINCT user_id FROM logs WHERE type IN (2,5) AND created_at >= %d)", threshold)
+		condition = fmt.Sprintf("request_count > 0 AND NOT EXISTS (SELECT 1 FROM logs l WHERE l.user_id = users.id AND l.type IN (2,5) AND l.created_at >= %d)", threshold)
 	case ActivityInactive:
 		threshold := nowUnix - ActiveThreshold
-		condition = fmt.Sprintf("request_count > 0 AND id NOT IN (SELECT DISTINCT user_id FROM logs WHERE type IN (2,5) AND created_at >= %d)", threshold)
+		condition = fmt.Sprintf("request_count > 0 AND NOT EXISTS (SELECT 1 FROM logs l WHERE l.user_id = users.id AND l.type IN (2,5) AND l.created_at >= %d)", threshold)
 	default:
 		return nil, fmt.Errorf("invalid activity level: %s", activityLevel)
 	}
@@ -538,10 +559,18 @@ func (s *UserManagementService) BatchDeleteInactiveUsers(activityLevel string, d
 	affected := toInt64(countRow["count"])
 
 	if dryRun {
+		users, err := s.previewUsers(fmt.Sprintf(
+			"SELECT id, username FROM users WHERE deleted_at IS NULL AND role != 100 AND %s ORDER BY id ASC LIMIT 20", condition))
+		if err != nil {
+			return nil, err
+		}
+
 		return map[string]interface{}{
 			"dry_run":        true,
+			"count":          affected,
 			"affected_count": affected,
 			"activity_level": activityLevel,
+			"users":          users,
 		}, nil
 	}
 
@@ -563,12 +592,80 @@ func (s *UserManagementService) BatchDeleteInactiveUsers(activityLevel string, d
 
 	return map[string]interface{}{
 		"dry_run":        false,
+		"count":          affected,
 		"affected_count": affected,
 		"activity_level": activityLevel,
 		"hard_delete":    hardDelete,
 	}, nil
 }
 
+func (s *UserManagementService) previewUsers(query string) ([]string, error) {
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+
+	users := make([]string, 0, len(rows))
+	for _, row := range rows {
+		users = append(users, userPreviewName(row))
+	}
+	return users, nil
+}
+
+func userPreviewName(row map[string]interface{}) string {
+	username := strings.TrimSpace(toString(row["username"]))
+	if username != "" {
+		return username
+	}
+	if id := toInt64(row["id"]); id > 0 {
+		return fmt.Sprintf("用户#%d", id)
+	}
+	return "未知用户"
+}
+
+// toInt64 safely converts interface{} to int64
+func toInt64(v interface{}) int64 {
+	if v == nil {
+		return 0
+	}
+	switch val := v.(type) {
+	case int64:
+		return val
+	case int:
+		return int64(val)
+	case int32:
+		return int64(val)
+	case float64:
+		return int64(val)
+	case float32:
+		return int64(val)
+	case string:
+		var n int64
+		fmt.Sscanf(val, "%d", &n)
+		return n
+	case []byte:
+		var n int64
+		fmt.Sscanf(string(val), "%d", &n)
+		return n
+	default:
+		return 0
+	}
+}
+
+// toString safely converts interface{} to string
+func toString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case []byte:
+		return string(val)
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
 // GetInvitedUsers returns users invited by the specified user
 func (s *UserManagementService) GetInvitedUsers(userID int64, page, pageSize int) (map[string]interface{}, error) {
 	offset := (page - 1) * pageSize

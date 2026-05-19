@@ -149,6 +149,49 @@ interface CustomModelGroup {
   models: string[] // exact model names in this group
 }
 
+// 厂商关键字映射：当某个 vendor 分组配置了对应的 icon 时，
+// 模型名包含这些关键字（不区分大小写）也会被自动算入该分组。
+// 这样新增的模型（如 claude-opus-4-7）无需手动勾选就能出现在 Claude 分组下。
+const VENDOR_KEYWORDS: Record<string, string[]> = {
+  openai: ['gpt', 'openai', 'o1', 'o3', 'chatgpt', 'dall-e', 'whisper', 'tts'],
+  claude: ['claude', 'anthropic'],
+  gemini: ['gemini', 'gemma', 'bard'],
+  deepseek: ['deepseek'],
+  meta: ['llama', 'meta'],
+  mistral: ['mistral', 'mixtral', 'codestral', 'pixtral'],
+  qwen: ['qwen', 'tongyi'],
+  zhipu: ['glm', 'chatglm', 'zhipu'],
+  moonshot: ['moonshot', 'kimi'],
+  kimi: ['kimi', 'moonshot'],
+  doubao: ['doubao', 'bytedance'],
+  minimax: ['minimax', 'abab'],
+  baichuan: ['baichuan'],
+  yi: ['yi-', '01-ai', 'zero-one'],
+  spark: ['spark', 'xunfei'],
+  hunyuan: ['hunyuan', 'tencent'],
+  stepfun: ['stepfun', 'step-'],
+  wenxin: ['wenxin', 'ernie', 'baidu'],
+  cohere: ['cohere', 'command'],
+  perplexity: ['perplexity', 'pplx', 'sonar'],
+  groq: ['groq'],
+  ollama: ['ollama'],
+  together: ['together'],
+  openrouter: ['openrouter'],
+  siliconcloud: ['siliconcloud', 'silicon'],
+  coze: ['coze'],
+  cerebras: ['cerebras'],
+}
+
+// 判断某个模型是否属于某个自定义分组（精确名 + 厂商关键字模糊匹配）
+function modelMatchesGroup(modelName: string, group: CustomModelGroup): boolean {
+  if (group.models.includes(modelName)) return true
+  if (!group.icon) return false
+  const keywords = VENDOR_KEYWORDS[group.icon]
+  if (!keywords) return false
+  const lower = modelName.toLowerCase()
+  return keywords.some(k => lower.includes(k))
+}
+
 // Available icons for groups (from @lobehub/icons)
 const GROUP_ICON_OPTIONS: { key: string; label: string; component: IconComponent }[] = [
   { key: 'openai', label: 'OpenAI', component: OpenAI },
@@ -613,7 +656,19 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
   // Fetch model statuses
   // forceRefresh: bypass cache to get fresh data (used for manual refresh)
   const fetchModelStatuses = useCallback(async (forceRefresh = false) => {
-    if (selectedModels.length === 0) {
+    // 计算实际要请求状态的模型集合：
+    //   - 用户手工选中的 selectedModels（基础）
+    //   - 当前过滤器若为某个密钥分组（token:X），把该分组下的全部模型并入
+    // 这样选中密钥分组时，分组下所有模型会自动出现在监控视图中，无需手动勾选。
+    const tokenGroupModels = (() => {
+      if (!groupFilter.startsWith('token:')) return [] as string[]
+      const name = groupFilter.slice(6)
+      const tg = tokenGroups.find(g => g.group_name === name)
+      return tg ? tg.models : []
+    })()
+    const fetchSet = Array.from(new Set([...selectedModels, ...tokenGroupModels]))
+
+    if (fetchSet.length === 0) {
       setModelStatuses([])
       setLoading(false)
       // Only clear initialLoading when we know models have been loaded
@@ -633,7 +688,7 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
       const response = await fetch(`${apiUrl}${getApiPrefix()}/status/batch?window=${timeWindow}${cacheParam}`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify(selectedModels),
+        body: JSON.stringify(fetchSet),
       })
       const data = await response.json()
       if (data.success) {
@@ -649,7 +704,7 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
       setLoading(false)
       setRefreshing(false)
     }
-  }, [apiUrl, getApiPrefix, getAuthHeaders, selectedModels, timeWindow, isEmbed, showToast])
+  }, [apiUrl, getApiPrefix, getAuthHeaders, selectedModels, timeWindow, isEmbed, showToast, groupFilter, tokenGroups, availableModels.length])
 
   // Initial load
   useEffect(() => {
@@ -660,6 +715,7 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
   const isInitialMount = useRef(true)
   const prevSelectedModels = useRef<string[]>([])
   const prevTimeWindow = useRef<string>(timeWindow)
+  const prevGroupFilter = useRef<string>(groupFilter)
 
   // Handle model selection and time window changes
   useEffect(() => {
@@ -668,6 +724,7 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
       isInitialMount.current = false
       prevSelectedModels.current = selectedModels
       prevTimeWindow.current = timeWindow
+      prevGroupFilter.current = groupFilter
       fetchModelStatuses(false)  // Use cache on initial load
       return
     }
@@ -677,19 +734,24 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
       selectedModels.length !== prevSelectedModels.current.length ||
       selectedModels.some(m => !prevSelectedModels.current.includes(m))
     const windowChanged = timeWindow !== prevTimeWindow.current
+    // 切到/切出某个密钥分组时也要重新拉取，因为请求集合包含分组成员
+    const groupFilterChanged = groupFilter !== prevGroupFilter.current
+    const tokenGroupSwitched =
+      groupFilterChanged && (groupFilter.startsWith('token:') || prevGroupFilter.current.startsWith('token:'))
 
     // Update refs
     prevSelectedModels.current = selectedModels
     prevTimeWindow.current = timeWindow
+    prevGroupFilter.current = groupFilter
 
-    if (modelsChanged) {
+    if (modelsChanged || tokenGroupSwitched) {
       // Models selection changed - fetch fresh data for new models
       fetchModelStatuses(true)
     } else if (windowChanged) {
       // Only time window changed - can use cache (pre-warmed)
       fetchModelStatuses(false)
     }
-  }, [selectedModels, timeWindow, fetchModelStatuses])
+  }, [selectedModels, timeWindow, groupFilter, fetchModelStatuses])
 
   // Auto refresh countdown
   useEffect(() => {
@@ -750,7 +812,7 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
     counts.all = visibleModels.length
     visibleModels.forEach(m => {
       customGroups.forEach(g => {
-        if (g.models.includes(m.model_name)) {
+        if (modelMatchesGroup(m.model_name, g)) {
           counts[g.id] = (counts[g.id] || 0) + 1
         }
       })
@@ -854,10 +916,10 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
           result = result.filter(m => tg.models.includes(m.model_name))
         }
       } else {
-        // 自定义分组过滤
+        // 自定义分组过滤（精确名 + 厂商关键字模糊匹配）
         const group = customGroups.find(g => g.id === groupFilter)
         if (group) {
-          result = result.filter(m => group.models.includes(m.model_name))
+          result = result.filter(m => modelMatchesGroup(m.model_name, group))
         }
       }
     }
@@ -1000,7 +1062,7 @@ export function ModelStatusMonitor({ isEmbed = false }: ModelStatusMonitorProps)
                     </div>
                     <h2 className="text-xl font-semibold tracking-tight whitespace-nowrap">模型状态监控</h2>
                   </div>
-                  <Badge variant="outline" className="font-normal">{TIME_WINDOWS.find(w => w.value === timeWindow)?.label || '24小时'} 滑动窗口</Badge>
+                  <Badge variant="outline" className="font-normal whitespace-nowrap shrink-0">{TIME_WINDOWS.find(w => w.value === timeWindow)?.label || '24小时'} 滑动窗口</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-2 flex items-center flex-wrap gap-x-3 gap-y-1">
                   <span>监控 <span className="font-semibold text-foreground">{selectedModels.length}</span> 个模型</span>
@@ -2256,12 +2318,9 @@ function ModelStatusCard({ model, dragHandleProps }: ModelStatusCardProps) {
     : model.current_status === 'yellow' ? 'text-yellow-600 dark:text-yellow-400'
       : 'text-red-600 dark:text-red-400'
 
-  // Card border/bg classes based on status
-  const cardStatusClass = model.current_status === 'red'
-    ? 'border-l-[3px] border-l-red-500 bg-red-500/[0.03]'
-    : model.current_status === 'yellow'
-      ? 'border-l-[3px] border-l-yellow-500 bg-yellow-500/[0.03]'
-      : ''
+  // 状态颜色仅通过模型名右侧的徽章 + 成功率数字 + 时间槽点显示，
+  // 卡片本身不再加左边色条/背景染色，保持视觉中性。
+  const cardStatusClass = ''
 
   return (
     <Card className={cn(

@@ -32,6 +32,55 @@ PROJECT_NAME="new_api_tools"
 REINSTALL=false
 
 #######################################
+# 根据 .env 中的 NEWAPI_NETWORK 检测 host 模式，
+# 设置 COMPOSE_FILE 让所有后续 docker compose 调用自动叠加 host overlay。
+# 在任何 $DOCKER_COMPOSE 调用前先调用本函数（通常 cd 到 project_dir 之后）。
+#######################################
+setup_compose_files() {
+  local project_dir="${1:-.}"
+  local env_file="${project_dir}/.env"
+  local base="${project_dir}/docker-compose.yml"
+  local host_overlay="${project_dir}/docker-compose.host.yml"
+
+  unset COMPOSE_FILE
+
+  [[ -f "$env_file" ]] || return 0
+
+  # 必须显式存在 NEWAPI_NETWORK 行才判断；行缺失视为老版 .env，让 base compose 走默认 fallback
+  # 注意：set -e + pipefail 下，grep 无匹配会让 pipe 退出码为 1 → 整个脚本死掉，必须 || true 兜底。
+  local nw_line
+  nw_line=$(grep -E '^NEWAPI_NETWORK=' "$env_file" 2>/dev/null | head -n1 || true)
+  [[ -n "$nw_line" ]] || return 0
+
+  local nw
+  nw=$(echo "$nw_line" | cut -d'=' -f2- | tr -d '\r\n')
+
+  # NEWAPI_NETWORK= （空值）→ deploy.sh 在 host 模式下生成的标记
+  if [[ -z "$nw" && -f "$host_overlay" ]]; then
+    export COMPOSE_FILE="${base}:${host_overlay}"
+  fi
+}
+
+#######################################
+# 只清理本项目命名的 Docker 残留资源。
+# 注意：不要调用 docker system prune，它会全局删除其他项目的已停止容器、
+# 未使用网络、悬空镜像和构建缓存。
+#######################################
+cleanup_project_docker_resources() {
+  log_info "清理 newapi-tools 残留 Docker 资源..."
+
+  docker ps -a --format '{{.Names}}' \
+    | grep -E '^(newapi-tools|newapi-tools-redis|newapi-tools-backend|newapi-tools-frontend)$' \
+    | xargs -r docker rm -f 2>/dev/null || true
+
+  docker images --format '{{.Repository}}:{{.Tag}}' \
+    | grep -E '^(ghcr\.io/james-6-23/new_api_tools|new_api_tools|newapi-tools|newapi-tools-backend|newapi-tools-frontend)(:|$)' \
+    | xargs -r docker rmi -f 2>/dev/null || true
+
+  docker network rm newapi-tools-network new_api_tools_default 2>/dev/null || true
+}
+
+#######################################
 # 检查必要命令
 #######################################
 check_requirements() {
@@ -132,10 +181,16 @@ show_initial_env_detection() {
     echo -e "  ${GREEN}✓${NC} NewAPI 容器: ${GREEN}${newapi_container}${NC}"
 
     # 检测网络
-    local networks
+    local networks network_mode
     networks=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$newapi_container" 2>/dev/null | head -n 1)
+    network_mode=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$newapi_container" 2>/dev/null || true)
 
-    if [[ "$networks" == "bridge" ]]; then
+    if [[ "$network_mode" == "host" ]]; then
+      echo -e "  ${YELLOW}!${NC} 网络模式: ${YELLOW}Host 模式${NC}"
+      echo -e "    ${YELLOW}→ NewAPI 与宿主机共享网络栈${NC}"
+      echo -e "    ${YELLOW}→ newapi-tools 将通过 host.docker.internal 访问数据库${NC}"
+      echo -e "    ${YELLOW}→ 启动时会附加 docker-compose.host.yml overlay${NC}"
+    elif [[ "$networks" == "bridge" ]]; then
       echo -e "  ${YELLOW}!${NC} 网络模式: ${YELLOW}Bridge 模式${NC}"
       echo -e "    ${YELLOW}→ NewAPI 使用默认 bridge 网络${NC}"
       echo -e "    ${YELLOW}→ 将使用 IPv4 地址连接数据库${NC}"
@@ -238,13 +293,27 @@ detect_env_details() {
     ENV_DB_PORT=$(grep -E '^DB_PORT=' "$env_file" 2>/dev/null | cut -d'=' -f2 || echo "未知")
     ENV_DB_NAME=$(grep -E '^DB_NAME=' "$env_file" 2>/dev/null | cut -d'=' -f2 || echo "未知")
     ENV_FRONTEND_PORT=$(grep -E '^FRONTEND_PORT=' "$env_file" 2>/dev/null | cut -d'=' -f2 || echo "1145")
+    ENV_ADMIN_PASSWORD=$(grep -E '^ADMIN_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2- || echo "")
+    # SERVER_HOST 读取 .env 中显式声明的最后一行（处理用户多次写入的情况）；缺失视为默认 127.0.0.1
+    local _sh_raw
+    _sh_raw=$(grep -E '^SERVER_HOST=' "$env_file" 2>/dev/null | tail -n1 | cut -d'=' -f2- || true)
+    _sh_raw="${_sh_raw//[\"\'\ $'\r'$'\n'$'\t']/}"
+    ENV_SERVER_HOST="${_sh_raw:-127.0.0.1}"
+    # FRONTEND_BIND 控制 1145 端口对外暴露（0.0.0.0 公开 / 127.0.0.1 仅本机）
+    local _fb_raw
+    _fb_raw=$(grep -E '^FRONTEND_BIND=' "$env_file" 2>/dev/null | tail -n1 | cut -d'=' -f2- || true)
+    _fb_raw="${_fb_raw//[\"\'\ $'\r'$'\n'$'\t']/}"
+    ENV_FRONTEND_BIND="${_fb_raw:-0.0.0.0}"
   else
     ENV_NEWAPI_NETWORK="未配置"
     ENV_DB_ENGINE="未配置"
     ENV_DB_DNS="未配置"
     ENV_DB_PORT="未配置"
     ENV_DB_NAME="未配置"
+    ENV_SERVER_HOST="未配置"
+    ENV_FRONTEND_BIND="未配置"
     ENV_FRONTEND_PORT="1145"
+    ENV_ADMIN_PASSWORD=""
   fi
 
   # 判断网络模式
@@ -257,6 +326,30 @@ detect_env_details() {
   else
     NETWORK_MODE="正常模式"
     NETWORK_MODE_COLOR="${GREEN}正常模式${NC} (使用 Docker 网络服务发现)"
+  fi
+
+  # 判断后端绑定模式（影响 8000 端口的暴露范围）
+  if [[ "$ENV_SERVER_HOST" == "0.0.0.0" || "$ENV_SERVER_HOST" == "::" ]]; then
+    BIND_MODE="不安全"
+    BIND_MODE_COLOR="${RED}${ENV_SERVER_HOST}${NC} (8000 端口对外暴露，不推荐)"
+  elif [[ "$ENV_SERVER_HOST" == "127.0.0.1" || "$ENV_SERVER_HOST" == "localhost" || "$ENV_SERVER_HOST" == "::1" ]]; then
+    BIND_MODE="安全"
+    BIND_MODE_COLOR="${GREEN}${ENV_SERVER_HOST}${NC} (仅容器内 Nginx 反代访问)"
+  else
+    BIND_MODE="自定义"
+    BIND_MODE_COLOR="${YELLOW}${ENV_SERVER_HOST}${NC}"
+  fi
+
+  # 判断前端端口暴露范围（FRONTEND_BIND 控制 1145 是否对外）
+  if [[ "$ENV_FRONTEND_BIND" == "127.0.0.1" || "$ENV_FRONTEND_BIND" == "localhost" || "$ENV_FRONTEND_BIND" == "::1" ]]; then
+    FRONTEND_BIND_MODE="仅本机"
+    FRONTEND_BIND_COLOR="${GREEN}${ENV_FRONTEND_BIND}:${ENV_FRONTEND_PORT}${NC} (仅本机访问，需配 nginx 反代)"
+  elif [[ "$ENV_FRONTEND_BIND" == "0.0.0.0" || "$ENV_FRONTEND_BIND" == "::" || "$ENV_FRONTEND_BIND" == "未配置" ]]; then
+    FRONTEND_BIND_MODE="公网"
+    FRONTEND_BIND_COLOR="${YELLOW}0.0.0.0:${ENV_FRONTEND_PORT}${NC} (任意 IP 可达)"
+  else
+    FRONTEND_BIND_MODE="自定义"
+    FRONTEND_BIND_COLOR="${YELLOW}${ENV_FRONTEND_BIND}:${ENV_FRONTEND_PORT}${NC}"
   fi
 }
 
@@ -285,6 +378,13 @@ show_management_menu() {
     echo -e "  服务状态: $service_status"
     echo -e "  访问地址: ${BLUE}http://${server_ip}:${ENV_FRONTEND_PORT}${NC}"
     echo ""
+    echo -e "${GREEN}【登录凭证】${NC}"
+    if [[ -n "$ENV_ADMIN_PASSWORD" ]]; then
+      echo -e "  登录密码: ${YELLOW}${ENV_ADMIN_PASSWORD}${NC}"
+    else
+      echo -e "  登录密码: ${RED}未在 .env 中找到${NC}"
+    fi
+    echo ""
     echo -e "${GREEN}【网络模式】${NC}"
     echo -e "  运行模式: $NETWORK_MODE_COLOR"
     echo -e "  网络名称: ${YELLOW}${ENV_NEWAPI_NETWORK}${NC}"
@@ -293,6 +393,10 @@ show_management_menu() {
     echo -e "  数据库类型: ${YELLOW}${ENV_DB_ENGINE}${NC}"
     echo -e "  数据库地址: ${YELLOW}${ENV_DB_DNS}:${ENV_DB_PORT}${NC}"
     echo -e "  数据库名称: ${YELLOW}${ENV_DB_NAME}${NC}"
+    echo ""
+    echo -e "${GREEN}【后端绑定】${NC}"
+    echo -e "  SERVER_HOST: $BIND_MODE_COLOR"
+    echo -e "  对外端口:    $FRONTEND_BIND_COLOR"
     echo ""
     echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}【操作菜单】${NC}"
@@ -310,9 +414,15 @@ show_management_menu() {
     echo "  9) 完全卸载   (删除所有内容，包括数据，需确认)"
     echo " 10) 完全重装   (完全卸载后重新安装，需确认)"
     echo ""
+    if [[ "$BIND_MODE" == "不安全" || "$FRONTEND_BIND_MODE" == "公网" ]]; then
+      echo -e " 11) ${GREEN}安全设置${NC}     (切换 SERVER_HOST / 切换前端端口暴露范围)"
+    else
+      echo " 11) 安全设置     (切换 SERVER_HOST / 切换前端端口暴露范围)"
+    fi
+    echo ""
     echo "  0) 退出"
     echo ""
-    read -r -p "请选择操作 [0-10]: " choice
+    read -r -p "请选择操作 [0-11]: " choice
 
     case "$choice" in
       1)
@@ -351,7 +461,13 @@ show_management_menu() {
         ;;
       8)
         echo ""
-        echo -e "${YELLOW}重新安装将删除容器和配置文件，但保留 data 目录${NC}"
+        echo -e "${YELLOW}重新安装将：${NC}"
+        echo "  • 删除现有 newapi-tools 容器和 .env 配置"
+        echo "  • 保留 data 目录（GeoIP / 本地存储）"
+        echo "  • 重新运行部署向导"
+        echo ""
+        echo -e "${GREEN}NewAPI 自身的数据库 / 用户数据完全不受影响${NC}"
+        echo ""
         read -r -p "确认重新安装? [y/N]: " confirm
         if [[ "$confirm" =~ ^[yY]$ ]]; then
           REINSTALL=true
@@ -366,6 +482,13 @@ show_management_menu() {
       10)
         do_full_reinstall_interactive "$target_dir"
         ;;
+      11)
+        do_security_settings_interactive "$target_dir"
+        echo ""
+        read -r -p "按回车键继续..."
+        # 重新读取以刷新菜单上的状态
+        detect_env_details "$target_dir"
+        ;;
       0|"")
         log_info "退出"
         exit 0
@@ -375,6 +498,190 @@ show_management_menu() {
         ;;
     esac
   done
+}
+
+#######################################
+# 安全设置子菜单
+# 提供 SERVER_HOST / FRONTEND_BIND 两个开关
+#######################################
+do_security_settings_interactive() {
+  local project_dir="$1"
+  while true; do
+    detect_env_details "$project_dir"
+    echo ""
+    echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}  安全设置${NC}"
+    echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  当前 SERVER_HOST     : $BIND_MODE_COLOR"
+    echo -e "  当前对外端口绑定     : $FRONTEND_BIND_COLOR"
+    echo ""
+    echo "  1) 切换 SERVER_HOST（Go 后端 8000 端口绑定地址）"
+    echo "  2) 切换前端端口绑定（${ENV_FRONTEND_PORT} 端口是否对公网开放）"
+    echo ""
+    echo "  0) 返回上级菜单"
+    echo ""
+    read -r -p "请选择 [0-2]: " choice
+    case "$choice" in
+      1) do_toggle_bind_mode_interactive "$project_dir" ;;
+      2) do_toggle_frontend_bind_interactive "$project_dir" ;;
+      0|"") return 0 ;;
+      *) log_warn "无效选择" ;;
+    esac
+  done
+}
+
+#######################################
+# 切换前端端口绑定（FRONTEND_BIND）
+#######################################
+do_toggle_frontend_bind_interactive() {
+  local project_dir="$1"
+  local env_file="${project_dir}/.env"
+  [[ -f "$env_file" ]] || { log_error "未找到 .env"; return 1; }
+  cd "$project_dir"
+
+  local current
+  current=$(grep -E '^FRONTEND_BIND=' "$env_file" 2>/dev/null | tail -n1 | cut -d'=' -f2- || true)
+  current="${current//[\"\'\ $'\r'$'\n'$'\t']/}"
+  current="${current:-0.0.0.0}"
+
+  echo ""
+  echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BLUE}  切换前端端口（${ENV_FRONTEND_PORT}）暴露范围${NC}"
+  echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
+  echo ""
+  echo -e "  当前: ${YELLOW}${current}:${ENV_FRONTEND_PORT}${NC}"
+  echo ""
+  echo -e "  ${YELLOW}1) 公网可达${NC}    FRONTEND_BIND=0.0.0.0"
+  echo -e "                  浏览器可直接 http://server-ip:${ENV_FRONTEND_PORT} 访问"
+  echo -e "                  适合内网部署 / 域名解析未就绪 / 需要快速访问的场景"
+  echo ""
+  echo -e "  ${GREEN}2) 仅本机${NC}      FRONTEND_BIND=127.0.0.1"
+  echo -e "                  外部直连不通，需配宿主机 nginx 反代到 https://your-domain"
+  echo -e "                  ${GREEN}推荐${NC}：HTTPS、域名、隔离公网攻击面"
+  echo ""
+  echo "  0) 取消"
+  echo ""
+  read -r -p "请选择 [0-2]: " choice
+  local target=""
+  case "$choice" in
+    1) target="0.0.0.0" ;;
+    2)
+      echo ""
+      log_warn "切换后将无法用 IP:${ENV_FRONTEND_PORT} 直接访问，必须先在宿主机配好 nginx 反代"
+      log_warn "示例 nginx 配置:"
+      cat <<NGINX
+   server {
+     listen 443 ssl http2;
+     server_name your-domain.com;
+     ssl_certificate     /path/to/fullchain.pem;
+     ssl_certificate_key /path/to/privkey.pem;
+     location / {
+       proxy_pass http://127.0.0.1:${ENV_FRONTEND_PORT};
+       proxy_set_header Host \$host;
+       proxy_set_header X-Real-IP \$remote_addr;
+       proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto \$scheme;
+     }
+   }
+NGINX
+      echo ""
+      read -r -p "确认切换? [y/N]: " confirm
+      [[ "$confirm" =~ ^[yY]$ ]] || { log_info "已取消"; return 0; }
+      target="127.0.0.1"
+      ;;
+    0|"") log_info "已取消"; return 0 ;;
+    *) log_warn "无效选择"; return 1 ;;
+  esac
+
+  if [[ "$current" == "$target" ]]; then
+    log_info "当前已是 ${target}，无需切换"
+    return 0
+  fi
+
+  sed -i.bak 's|^FRONTEND_BIND=|# Disabled by install.sh: FRONTEND_BIND=|g' "$env_file" 2>/dev/null && rm -f "${env_file}.bak"
+  echo "FRONTEND_BIND=${target}" >> "$env_file"
+  log_success "已写入 FRONTEND_BIND=${target}"
+
+  setup_compose_files "$project_dir"
+  log_info "重启服务以应用新绑定..."
+  $DOCKER_COMPOSE down 2>&1 | tail -5
+  $DOCKER_COMPOSE up -d 2>&1 | tail -5
+  log_success "服务已重启"
+}
+
+#######################################
+# 切换 Go 后端绑定地址（安全 ⇄ 暴露）
+# 用法：菜单选项 11
+#######################################
+do_toggle_bind_mode_interactive() {
+  local project_dir="$1"
+  local env_file="${project_dir}/.env"
+
+  if [[ ! -f "$env_file" ]]; then
+    log_error "未找到 .env 文件: $env_file"
+    return 1
+  fi
+
+  cd "$project_dir"
+
+  # 读取当前值（与 detect_env_details 一致的解析规则）
+  local current
+  current=$(grep -E '^SERVER_HOST=' "$env_file" 2>/dev/null | tail -n1 | cut -d'=' -f2- || true)
+  current="${current//[\"\'\ $'\r'$'\n'$'\t']/}"
+  current="${current:-127.0.0.1}"
+
+  echo ""
+  echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BLUE}  Go 后端绑定模式切换${NC}"
+  echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
+  echo ""
+  echo -e "  当前: ${YELLOW}SERVER_HOST=${current}${NC}"
+  echo ""
+  echo -e "  ${GREEN}1) 安全模式${NC}    SERVER_HOST=127.0.0.1"
+  echo -e "                  Go 后端只监听容器内 loopback，由 Nginx 反代到 ${ENV_FRONTEND_PORT} 端口对外。"
+  echo -e "                  这是${GREEN}推荐${NC}配置。"
+  echo ""
+  echo -e "  ${RED}2) 暴露模式${NC}    SERVER_HOST=0.0.0.0"
+  echo -e "                  Go 后端 8000 端口监听容器所有接口。"
+  echo -e "                  ${RED}host 网络模式下会直接暴露到宿主机外网，有安全风险。${NC}"
+  echo -e "                  仅在调试或自定义反代时使用。"
+  echo ""
+  echo "  0) 取消"
+  echo ""
+  read -r -p "请选择 [0-2]: " choice
+
+  local target=""
+  case "$choice" in
+    1) target="127.0.0.1" ;;
+    2)
+      echo ""
+      log_warn "你即将把 Go 后端 8000 端口暴露到容器虚拟网卡所有接口"
+      log_warn "请确认你了解此操作的安全影响"
+      read -r -p "继续? [y/N]: " confirm
+      [[ "$confirm" =~ ^[yY]$ ]] || { log_info "已取消"; return 0; }
+      target="0.0.0.0"
+      ;;
+    0|"") log_info "已取消"; return 0 ;;
+    *) log_warn "无效选择"; return 1 ;;
+  esac
+
+  if [[ "$current" == "$target" ]]; then
+    log_info "当前已是 ${target}，无需切换"
+    return 0
+  fi
+
+  # 注释掉所有旧的 SERVER_HOST 行（保留追溯），追加新值到末尾
+  sed -i.bak 's|^SERVER_HOST=|# Disabled by install.sh: SERVER_HOST=|g' "$env_file" 2>/dev/null && rm -f "${env_file}.bak"
+  echo "SERVER_HOST=${target}" >> "$env_file"
+  log_success "已写入 SERVER_HOST=${target}"
+
+  # 重启容器使配置生效（环境变量只在容器启动时读取）
+  setup_compose_files "$project_dir"
+  log_info "重启服务以应用新绑定..."
+  $DOCKER_COMPOSE down 2>&1 | tail -5
+  $DOCKER_COMPOSE up -d 2>&1 | tail -5
+  log_success "服务已用新绑定重启"
 }
 
 #######################################
@@ -397,6 +704,12 @@ do_update_interactive() {
 
   # 迁移旧版 .env（补充 Go 版本所需字段）
   migrate_env_file "$project_dir"
+
+  # 安全检查：SERVER_HOST 是否绑定到不安全的 0.0.0.0
+  check_server_host_security "$project_dir"
+
+  # 根据 .env 自动选择 compose 文件（host 模式叠加 overlay）
+  setup_compose_files "$project_dir"
 
   # 拉取最新镜像并重启
   log_info "拉取最新镜像..."
@@ -425,6 +738,7 @@ do_update_interactive() {
 do_status_interactive() {
   local project_dir="$1"
   cd "$project_dir"
+  setup_compose_files "$project_dir"
 
   echo ""
   echo -e "${BLUE}--- 容器状态 ---${NC}"
@@ -455,6 +769,7 @@ do_status_interactive() {
 do_logs_interactive() {
   local project_dir="$1"
   cd "$project_dir"
+  setup_compose_files "$project_dir"
   log_info "显示实时日志 (Ctrl+C 返回菜单)..."
   echo ""
   $DOCKER_COMPOSE logs -f --tail=100 || true
@@ -466,6 +781,7 @@ do_logs_interactive() {
 do_restart_interactive() {
   local project_dir="$1"
   cd "$project_dir"
+  setup_compose_files "$project_dir"
   log_info "重启服务..."
   $DOCKER_COMPOSE restart
   log_success "服务已重启"
@@ -479,6 +795,7 @@ do_restart_interactive() {
 do_stop_interactive() {
   local project_dir="$1"
   cd "$project_dir"
+  setup_compose_files "$project_dir"
   log_info "停止服务..."
   $DOCKER_COMPOSE stop
   log_success "服务已停止"
@@ -490,6 +807,7 @@ do_stop_interactive() {
 do_start_interactive() {
   local project_dir="$1"
   cd "$project_dir"
+  setup_compose_files "$project_dir"
   log_info "启动服务..."
   $DOCKER_COMPOSE start
   log_success "服务已启动"
@@ -526,11 +844,23 @@ do_purge_interactive() {
   cd "$project_dir"
 
   echo ""
-  echo -e "${RED}========================================${NC}"
+  echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
   echo -e "${RED}  警告: 完全卸载${NC}"
-  echo -e "${RED}========================================${NC}"
+  echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
   echo ""
-  echo -e "${RED}所有数据将被永久删除，无法恢复!${NC}"
+  echo -e "${YELLOW}将永久删除以下 newapi-tools 自身的数据：${NC}"
+  echo "  • 容器: newapi-tools / newapi-tools-redis"
+  echo "  • 镜像: ghcr.io/james-6-23/new_api_tools:*"
+  echo "  • Redis 缓存卷 (仪表盘 / 模型状态 / 等缓存)"
+  echo "  • Docker 网络: newapi-tools-network (若存在)"
+  echo "  • 配置文件 .env (含登录密码)"
+  echo "  • 项目目录: ${project_dir}"
+  echo ""
+  echo -e "${GREEN}NewAPI 本身完全不受影响：${NC}"
+  echo "  ✓ NewAPI 容器、数据库、Redis、用户充值/Token/日志 → 全部保留"
+  echo "  ✓ 本项目仅以只读方式访问 NewAPI 数据库，从不写入"
+  echo ""
+  echo -e "${YELLOW}卸载后想再用，重新跑 install.sh 一键部署即可${NC}"
   echo ""
   read -r -p "输入 'DELETE' 确认完全卸载: " confirm
 
@@ -571,16 +901,21 @@ do_full_reinstall_interactive() {
   local project_dir="$1"
 
   echo ""
-  echo -e "${RED}========================================${NC}"
+  echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
   echo -e "${RED}  警告: 完全重新安装${NC}"
-  echo -e "${RED}========================================${NC}"
+  echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
   echo ""
-  echo -e "${RED}将执行以下操作:${NC}"
-  echo -e "  1. 完全卸载现有服务（删除所有数据）"
-  echo -e "  2. 重新克隆项目"
-  echo -e "  3. 重新运行部署向导"
+  echo -e "${YELLOW}将执行：${NC}"
+  echo "  1. 删除现有 newapi-tools 容器 / 镜像 / 缓存卷 / 项目目录"
+  echo "  2. 重新克隆项目代码"
+  echo "  3. 重新运行部署向导（会再次询问密码 / 端口绑定等）"
   echo ""
-  echo -e "${RED}所有数据将被永久删除，无法恢复!${NC}"
+  echo -e "${YELLOW}影响范围：${NC}"
+  echo "  • newapi-tools 自身数据丢失（密码、缓存、配置）"
+  echo "  • 重新部署后需重新设置登录密码"
+  echo ""
+  echo -e "${GREEN}不影响：${NC}"
+  echo "  ✓ NewAPI 容器、数据库、用户业务数据 → 全部保留"
   echo ""
   read -r -p "输入 'REINSTALL' 确认完全重装: " confirm
 
@@ -597,13 +932,7 @@ do_full_reinstall_interactive() {
   log_info "停止并删除容器..."
   $DOCKER_COMPOSE down -v 2>/dev/null || true
 
-  # 删除相关镜像
-  log_info "删除相关镜像..."
-  docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'new_api_tools|newapi-tools' | xargs -r docker rmi -f 2>/dev/null || true
-
-  # 删除网络
-  docker network rm newapi-tools-network 2>/dev/null || true
-  docker network rm new_api_tools_default 2>/dev/null || true
+  cleanup_project_docker_resources
 
   # 记录安装目录（项目目录的父目录）
   local install_dir
@@ -615,10 +944,6 @@ do_full_reinstall_interactive() {
   # 删除项目目录
   log_info "删除项目目录..."
   rm -rf "$project_dir"
-
-  # 清理 Docker 资源
-  log_info "清理 Docker 资源..."
-  docker system prune -f 2>/dev/null || true
 
   log_success "卸载完成，开始重新安装..."
   echo ""
@@ -664,35 +989,15 @@ perform_cleanup() {
     log_success "已删除相关容器"
   fi
 
-  # 2. 删除相关镜像
-  log_info "删除相关镜像..."
-  local images
-  images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(newapi-tools-backend|newapi-tools-frontend|new_api_tools)' 2>/dev/null || true)
-  if [[ -n "$images" ]]; then
-    echo "$images" | xargs -r docker rmi -f 2>/dev/null || true
-    log_success "已删除相关镜像"
-  fi
+  # 2. 删除本项目残留 Docker 资源
+  cleanup_project_docker_resources
 
-  # 也尝试删除可能的 compose 项目镜像
-  images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'new_api_tools' 2>/dev/null || true)
-  if [[ -n "$images" ]]; then
-    echo "$images" | xargs -r docker rmi -f 2>/dev/null || true
-  fi
-
-  # 3. 删除相关网络 (如果存在)
-  log_info "清理相关网络..."
-  docker network rm new_api_tools_default 2>/dev/null || true
-
-  # 4. 删除项目目录
+  # 3. 删除项目目录
   log_info "删除项目目录: $target_dir"
   if [[ -d "$target_dir" ]]; then
     rm -rf "$target_dir"
     log_success "已删除项目目录"
   fi
-
-  # 5. 清理未使用的 Docker 资源
-  log_info "清理未使用的 Docker 资源..."
-  docker system prune -f 2>/dev/null || true
 
   log_success "清理完成，准备全新安装"
   echo ""
@@ -843,6 +1148,43 @@ migrate_env_file() {
 }
 
 #######################################
+# 检查 SERVER_HOST 安全性
+# 默认 Go 后端绑定 127.0.0.1，仅 Nginx 反代访问
+# 若用户显式配了 0.0.0.0，给出告警并询问是否改回（保留兼容旧配置的用户）
+#######################################
+check_server_host_security() {
+  local env_file="${1}/.env"
+  [[ -f "$env_file" ]] || return 0
+
+  local host_line
+  # set -e + pipefail 下，grep 无匹配会让 pipe 退出码为 1 → 必须 || true 兜底，否则脚本静默退出。
+  host_line=$(grep -E '^SERVER_HOST=' "$env_file" 2>/dev/null | head -n1 || true)
+  [[ -z "$host_line" ]] && return 0
+
+  local host_value
+  host_value=$(echo "$host_line" | cut -d'=' -f2-)
+  # 去掉所有引号、空白、回车
+  host_value="${host_value//[\"\'\ $'\r'$'\n'$'\t']/}"
+
+  if [[ "$host_value" == "0.0.0.0" || "$host_value" == "::" ]]; then
+    echo ""
+    log_warn "⚠ 检测到 .env 中 SERVER_HOST=${host_value}"
+    log_warn "   Go 后端 (8000 端口) 会暴露到容器虚拟网卡所有接口"
+    log_warn "   若是 host 网络模式部署，会直接暴露到宿主机外部，有安全风险"
+    echo ""
+    read -r -p "是否改为安全默认值 SERVER_HOST=127.0.0.1（推荐）? [Y/n]: " confirm
+    if [[ ! "$confirm" =~ ^[nN]$ ]]; then
+      # 注释掉旧行，追加新行
+      sed -i.bak 's|^SERVER_HOST=|# Disabled by install.sh (insecure): SERVER_HOST=|' "$env_file" 2>/dev/null && rm -f "${env_file}.bak"
+      echo "SERVER_HOST=127.0.0.1" >> "$env_file"
+      log_success "已改为 SERVER_HOST=127.0.0.1"
+    else
+      log_info "保留 SERVER_HOST=${host_value}（确认你了解风险）"
+    fi
+  fi
+}
+
+#######################################
 # 快速更新服务 (保留配置)
 #######################################
 quick_update() {
@@ -868,18 +1210,28 @@ quick_update() {
   # 迁移旧版 .env（补充 Go 版本所需字段）
   migrate_env_file "$PROJECT_DIR"
 
+  # 安全检查：SERVER_HOST 是否绑定到不安全的 0.0.0.0
+  check_server_host_security "$PROJECT_DIR"
+
   # 下载 GeoIP 数据库
   download_geoip_database
 
+  # 根据 .env 自动选择 compose 文件（host 模式叠加 overlay）
+  setup_compose_files "$PROJECT_DIR"
+  local -a compose_args=(--env-file "$env_file")
+  if [[ -z "${COMPOSE_FILE:-}" ]]; then
+    compose_args+=(-f "$compose_file")
+  fi
+
   # 拉取最新镜像
   log_info "拉取最新镜像..."
-  $DOCKER_COMPOSE -f "$compose_file" --env-file "$env_file" pull
+  $DOCKER_COMPOSE "${compose_args[@]}" pull
 
   log_info "重启服务..."
-  $DOCKER_COMPOSE -f "$compose_file" --env-file "$env_file" down
-  $DOCKER_COMPOSE -f "$compose_file" --env-file "$env_file" up -d
+  $DOCKER_COMPOSE "${compose_args[@]}" down
+  $DOCKER_COMPOSE "${compose_args[@]}" up -d
 
-  # 确保容器连接到 NewAPI 网络
+  # 确保容器连接到 NewAPI 网络（host 模式下 NEWAPI_NETWORK 为空，跳过）
   local newapi_network
   newapi_network=$(grep -E '^NEWAPI_NETWORK=' "$env_file" | cut -d'=' -f2 || true)
   if [[ -n "$newapi_network" ]]; then
