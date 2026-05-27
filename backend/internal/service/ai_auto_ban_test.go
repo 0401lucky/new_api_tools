@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -93,6 +94,29 @@ func seedAIBanUser(t *testing.T, role int) {
 	}
 }
 
+func seedAIBanSwitchingUser(t *testing.T) {
+	t.Helper()
+	db := NewAIAutoBanService().db.DB
+	now := time.Now().Unix()
+	if _, err := db.Exec(`INSERT INTO users (id, username, display_name, status, "group", role, request_count)
+		VALUES (2, 'switcher', 'Switcher', 1, 'default', 1, 100)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO tokens (id, user_id, status) VALUES (20, 2, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 12; i++ {
+		ip := fmt.Sprintf("198.51.100.%d", (i%4)+1)
+		if _, err := db.Exec(`INSERT INTO logs (
+			user_id, username, created_at, type, model_name, quota, prompt_tokens,
+			completion_tokens, use_time, ip, channel_id, channel_name, token_id, token_name, "group"
+		) VALUES (2, 'switcher', ?, 2, 'gpt-test', 100, 50, 100, 1.2, ?, 1, 'openai', 20, 'main', 'default')`,
+			now-int64((12-i)*10), ip); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func mockAIBanServer(t *testing.T, content string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +154,32 @@ func saveAIBanTestConfig(t *testing.T, baseURL string, dryRun bool) {
 	}
 }
 
+func hasAIBanFlag(row map[string]interface{}, flag string) bool {
+	for _, item := range toStringSlice(row["risk_flags"]) {
+		if item == flag {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAIBanConfigMasksAPIKey(t *testing.T) {
+	clearAIBanTestCache(t)
+	installAIBanSchema(t)
+	saveAIBanTestConfig(t, "https://api.example.test", true)
+
+	config := NewAIAutoBanService().GetConfig()
+	if _, ok := config["api_key"]; ok {
+		t.Fatalf("public config should not expose api_key: %#v", config)
+	}
+	if config["has_api_key"] != true {
+		t.Fatalf("public config should expose has_api_key=true: %#v", config)
+	}
+	if toString(config["masked_api_key"]) == "" || strings.Contains(toString(config["masked_api_key"]), "test-key") {
+		t.Fatalf("public config should expose only masked key: %#v", config)
+	}
+}
+
 func TestParseAIBanAssessmentJSONVariants(t *testing.T) {
 	plain, err := parseAIBanAssessment(`{"should_ban":true,"risk_score":9,"confidence":0.8,"action":"ban","reason":"高风险"}`)
 	if err != nil {
@@ -149,6 +199,57 @@ func TestParseAIBanAssessmentJSONVariants(t *testing.T) {
 
 	if _, err := parseAIBanAssessment("不是 JSON"); err == nil {
 		t.Fatal("invalid json should fail")
+	}
+}
+
+func TestBuildAIBanPromptReplacesCustomVariables(t *testing.T) {
+	config := map[string]interface{}{
+		"custom_prompt":   "用户 {user_id}/{username} 请求 {total_requests} 次，风险 {risk_flags}，黑名单命中 {user_blacklisted_ips}，系统黑名单 {blacklist_ips}",
+		"blacklist_ips":   []string{"203.0.113.8"},
+		"whitelist_ips":   []string{"198.51.100.1"},
+		"excluded_models": []string{},
+		"excluded_groups": []string{},
+	}
+	analysis := map[string]interface{}{
+		"user": map[string]interface{}{
+			"id":           42,
+			"username":     "alice",
+			"display_name": "Alice",
+			"group":        "default",
+		},
+		"summary": map[string]interface{}{
+			"total_requests": 12,
+			"unique_models":  1,
+			"unique_tokens":  1,
+			"unique_ips":     1,
+		},
+		"risk": map[string]interface{}{
+			"risk_flags": []string{"BLACKLIST_IP"},
+			"ip_switch_analysis": map[string]interface{}{
+				"switch_count":        0,
+				"rapid_switch_count":  0,
+				"avg_ip_duration":     0,
+				"min_switch_interval": 0,
+			},
+		},
+		"top_ips": []map[string]interface{}{{"ip": "203.0.113.8"}},
+	}
+	prompt, err := (&AIAutoBanService{}).buildAIBanPrompt(config, analysis, map[string]interface{}{
+		"whitelist_ips": []string{},
+		"blacklist_ips": []string{"203.0.113.8"},
+	}, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("build prompt failed: %v", err)
+	}
+	for _, placeholder := range []string{"{user_id}", "{total_requests}", "{user_blacklisted_ips}", "{blacklist_ips}"} {
+		if strings.Contains(prompt, placeholder) {
+			t.Fatalf("prompt should replace %s: %s", placeholder, prompt)
+		}
+	}
+	for _, expected := range []string{"42/Alice", "12 次", "BLACKLIST_IP", "203.0.113.8"} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("prompt missing %q: %s", expected, prompt)
+		}
 	}
 }
 
@@ -291,6 +392,30 @@ func TestAIBanAuditLogsKeepLatestThousand(t *testing.T) {
 	}
 	if toInt64(logs[0]["scan_id"]) != aiBanAuditLogLimit {
 		t.Fatalf("latest log should be kept first, got %#v", logs[0])
+	}
+}
+
+func TestAIBanSuspiciousUsersPrioritizesIPSwitching(t *testing.T) {
+	clearAIBanTestCache(t)
+	installAIBanSchema(t)
+	seedAIBanUser(t, 1)
+	seedAIBanSwitchingUser(t)
+
+	rows, err := NewAIAutoBanService().GetSuspiciousUsers("1h", 2)
+	if err != nil {
+		t.Fatalf("get suspicious users failed: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected two candidates, got %#v", rows)
+	}
+	if toInt64(rows[0]["user_id"]) != 2 {
+		t.Fatalf("ip switching user should rank first: %#v", rows)
+	}
+	if !hasAIBanFlag(rows[0], "IP_RAPID_SWITCH") || !hasAIBanFlag(rows[0], "IP_HOPPING") {
+		t.Fatalf("expected IP switching flags, got %#v", rows[0])
+	}
+	if toInt64(rows[0]["rapid_switch_count"]) == 0 {
+		t.Fatalf("rapid_switch_count should be populated: %#v", rows[0])
 	}
 }
 

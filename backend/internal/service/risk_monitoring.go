@@ -250,7 +250,7 @@ func (s *RiskMonitoringService) GetUserAnalysis(userID int64, windowSeconds int6
 	if uniqueIPs > 10 {
 		riskFlags = append(riskFlags, "MANY_IPS")
 	}
-	if failureRate > 50.0 && totalRequests > 10 {
+	if failureRate >= 0.5 && totalRequests > 10 {
 		riskFlags = append(riskFlags, "HIGH_FAILURE_RATE")
 	}
 

@@ -116,12 +116,11 @@ func copyDefaultAIBanConfig() map[string]interface{} {
 }
 
 func (s *AIAutoBanService) getRawAIBanConfig() map[string]interface{} {
-	cm := cache.Get()
 	var config map[string]interface{}
-	found, _ := cm.GetJSON(aiBanConfigKey, &config)
-	if !found || config == nil {
+	if !s.loadAIBanJSON(aiBanConfigKey, &config) || config == nil {
 		config = copyDefaultAIBanConfig()
 	}
+	stripComputedAIBanConfig(config)
 	for k, v := range defaultAIBanConfig {
 		if _, ok := config[k]; !ok {
 			config[k] = v
@@ -226,7 +225,7 @@ func (s *AIAutoBanService) validateAIBanRuntimeConfig(config map[string]interfac
 
 func (s *AIAutoBanService) getWhitelistIDs() []int64 {
 	var whitelist []interface{}
-	cache.Get().GetJSON("ai_ban:whitelist", &whitelist)
+	s.loadAIBanJSON("ai_ban:whitelist", &whitelist)
 	ids := make([]int64, 0, len(whitelist))
 	for _, item := range whitelist {
 		id := toInt64(item)
@@ -237,7 +236,7 @@ func (s *AIAutoBanService) getWhitelistIDs() []int64 {
 
 	if len(ids) == 0 {
 		var typed []int64
-		cache.Get().GetJSON("ai_ban:whitelist", &typed)
+		s.loadAIBanJSON("ai_ban:whitelist", &typed)
 		ids = typed
 	}
 	return ids
@@ -349,7 +348,7 @@ func (s *AIAutoBanService) getUserProtection(userID int64) aiBanProtection {
 func (s *AIAutoBanService) assessUser(userID int64, window string, opts aiBanAssessOptions) (map[string]interface{}, error) {
 	config := opts.config
 	if config == nil {
-		config = s.GetConfig()
+		config = s.getRawAIBanConfig()
 	}
 	if err := s.validateAIBanRuntimeConfig(config); err != nil {
 		return s.assessmentFallback(userID, window, "config_error", err.Error()), err
@@ -530,7 +529,7 @@ func (s *AIAutoBanService) assessmentFallback(userID int64, window, action, reas
 func (s *AIAutoBanService) buildAIBanPrompt(config map[string]interface{}, analysis map[string]interface{}, ipHits map[string]interface{}, excludedStats map[string]interface{}) (string, error) {
 	systemPrompt := defaultAIBanPrompt
 	if custom := configString(config, "custom_prompt"); custom != "" {
-		systemPrompt += "\n\n管理员补充规则：\n" + custom
+		systemPrompt += "\n\n管理员补充规则：\n" + renderAIBanCustomPrompt(custom, config, analysis, ipHits)
 	}
 
 	payload := map[string]interface{}{
@@ -565,6 +564,53 @@ func compactAIBanAnalysis(analysis map[string]interface{}) map[string]interface{
 		out["recent_logs"] = logs[:limit]
 	}
 	return out
+}
+
+func renderAIBanCustomPrompt(custom string, config map[string]interface{}, analysis map[string]interface{}, ipHits map[string]interface{}) string {
+	user, _ := analysis["user"].(map[string]interface{})
+	summary, _ := analysis["summary"].(map[string]interface{})
+	risk, _ := analysis["risk"].(map[string]interface{})
+	ipSwitch, _ := risk["ip_switch_analysis"].(map[string]interface{})
+
+	username := toString(user["display_name"])
+	if username == "" {
+		username = toString(user["username"])
+	}
+
+	replacements := map[string]string{
+		"{user_id}":              toString(user["id"]),
+		"{username}":             username,
+		"{user_group}":           toString(user["group"]),
+		"{total_requests}":       toString(summary["total_requests"]),
+		"{unique_models}":        toString(summary["unique_models"]),
+		"{unique_tokens}":        toString(summary["unique_tokens"]),
+		"{unique_ips}":           toString(summary["unique_ips"]),
+		"{switch_count}":         toString(ipSwitch["switch_count"]),
+		"{rapid_switch_count}":   toString(ipSwitch["rapid_switch_count"]),
+		"{avg_ip_duration}":      toString(ipSwitch["avg_ip_duration"]),
+		"{min_switch_interval}":  toString(ipSwitch["min_switch_interval"]),
+		"{risk_flags}":           strings.Join(toStringSlice(risk["risk_flags"]), ", "),
+		"{user_ips}":             strings.Join(extractAIBanTopIPs(analysis), ", "),
+		"{whitelist_ips}":        strings.Join(configStringSlice(config, "whitelist_ips"), ", "),
+		"{blacklist_ips}":        strings.Join(configStringSlice(config, "blacklist_ips"), ", "),
+		"{user_whitelisted_ips}": strings.Join(toStringSlice(ipHits["whitelist_ips"]), ", "),
+		"{user_blacklisted_ips}": strings.Join(toStringSlice(ipHits["blacklist_ips"]), ", "),
+	}
+	for placeholder, value := range replacements {
+		custom = strings.ReplaceAll(custom, placeholder, value)
+	}
+	return custom
+}
+
+func extractAIBanTopIPs(analysis map[string]interface{}) []string {
+	topIPs, _ := analysis["top_ips"].([]map[string]interface{})
+	ips := make([]string, 0, len(topIPs))
+	for _, row := range topIPs {
+		if ip := toString(row["ip"]); ip != "" {
+			ips = append(ips, ip)
+		}
+	}
+	return ips
 }
 
 func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt string) (aiBanAssessment, error) {
@@ -1018,9 +1064,8 @@ func matchIPRuleList(ip string, rules []string) bool {
 }
 
 func (s *AIAutoBanService) appendAuditLog(entry map[string]interface{}) map[string]interface{} {
-	cm := cache.Get()
 	var logs []map[string]interface{}
-	cm.GetJSON(aiBanAuditLogsKey, &logs)
+	s.loadAIBanJSON(aiBanAuditLogsKey, &logs)
 
 	maxID := int64(0)
 	for _, log := range logs {
@@ -1037,7 +1082,7 @@ func (s *AIAutoBanService) appendAuditLog(entry map[string]interface{}) map[stri
 	if len(logs) > aiBanAuditLogLimit {
 		logs = logs[:aiBanAuditLogLimit]
 	}
-	cm.Set(aiBanAuditLogsKey, logs, 0)
+	_ = s.saveAIBanJSON(aiBanAuditLogsKey, logs)
 	return entry
 }
 
@@ -1085,7 +1130,7 @@ func (s *AIAutoBanService) buildAuditLog(scanID, status, window string, dryRun b
 }
 
 func (s *AIAutoBanService) RunScheduledScan() map[string]interface{} {
-	config := s.GetConfig()
+	config := s.getRawAIBanConfig()
 	if !configBool(config, "enabled", false) {
 		return map[string]interface{}{"skipped": true, "message": "AI 审查未启用"}
 	}

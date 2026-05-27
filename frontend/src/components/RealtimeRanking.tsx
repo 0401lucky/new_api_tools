@@ -747,7 +747,6 @@ export function RealtimeRanking() {
     model: string
     base_url: string
     has_api_key: boolean
-    api_key?: string
     masked_api_key?: string
     scan_interval_minutes?: number
     whitelist_count?: number
@@ -1146,10 +1145,10 @@ export function RealtimeRanking() {
       const groupsData = await groupsRes.json()
       const modelsData = await modelsRes.json()
       if (groupsData.success) {
-        setAvailableGroups(groupsData.data?.items || [])
+        setAvailableGroups(Array.isArray(groupsData.data) ? groupsData.data : (groupsData.data?.items || []))
       }
       if (modelsData.success) {
-        setAvailableModelsForExclude(modelsData.data?.items || [])
+        setAvailableModelsForExclude(Array.isArray(modelsData.data) ? modelsData.data : (modelsData.data?.items || []))
       }
     } catch (e) {
       console.error('Failed to fetch exclude options:', e)
@@ -1308,7 +1307,7 @@ export function RealtimeRanking() {
       })
       const res = await response.json()
       if (res.success) {
-        setAiConfig(res.data)
+        fetchAiConfig()
         showToast('success', 'API 健康状态已重置')
       } else {
         showToast('error', res.message || '重置失败')
@@ -1372,7 +1371,7 @@ export function RealtimeRanking() {
       const res = await response.json()
       if (res.success) {
         const stats = res.data?.stats || {}
-        showToast('success', `扫描完成: 处理 ${stats.total_processed || 0} 人, 封禁 ${stats.banned || 0} 人, 告警 ${stats.warned || 0} 人`)
+        showToast('success', `扫描完成: 处理 ${stats.total_processed || 0} 人, 封禁 ${stats.banned_count || 0} 人, 告警 ${stats.warned_count || 0} 人`)
         fetchAiSuspiciousUsers()
         fetchBanRecords(1)
       } else {
@@ -3629,8 +3628,8 @@ export function RealtimeRanking() {
                       <div className="relative">
                         <Input
                           type={showApiKey ? "text" : "password"}
-                          placeholder="sk-..."
-                          value={aiConfigEdit.api_key || (aiConfig?.has_api_key ? (showApiKey && aiConfig.api_key ? aiConfig.api_key : aiConfig.masked_api_key) : '')}
+                          placeholder={aiConfig?.has_api_key ? (aiConfig.masked_api_key || '已保存 API Key') : 'sk-...'}
+                          value={aiConfigEdit.api_key}
                           onChange={(e) => setAiConfigEdit(prev => ({ ...prev, api_key: e.target.value }))}
                           className="h-10 bg-slate-50 border-slate-200 focus:bg-white transition-colors pr-10"
                         />
