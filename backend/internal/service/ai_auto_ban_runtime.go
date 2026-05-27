@@ -26,8 +26,10 @@ const (
 	aiBanAPIHealthKey           = "ai_ban:api_health"
 	aiBanLastScanKey            = "ai_ban:last_scan_at"
 	aiBanAuditLogLimit          = 1000
-	aiBanAutoBanRiskScore       = 8.0
-	aiBanAutoBanConfidence      = 0.75
+	aiBanDefaultScanWindow      = "24h"
+	aiBanDefaultScanLimit       = 50
+	aiBanDefaultRiskScore       = 8.0
+	aiBanDefaultConfidence      = 0.75
 	aiBanFailureSuspendCount    = 3
 	aiBanFailureSuspendDuration = 30 * time.Minute
 )
@@ -49,7 +51,7 @@ const defaultAIBanPrompt = `你是 New API 风控审查助手。请根据用户�
 - 7：明显可疑，建议告警。
 - 8-10：证据充分，才建议封禁。
 
-请保持保守：只有在证据充分且置信度较高时才输出 ban。confidence 使用 0 到 1 的小数。`
+请保持审慎但不要过度保守：当 1小时、24小时或7天窗口中出现持续异常、黑名单 IP、代理池跳变、Token 轮换、高失败率或空回复消耗等强证据时，应明确输出 ban。confidence 使用 0 到 1 的小数。`
 
 var aiBanScanMu sync.Mutex
 
@@ -126,6 +128,7 @@ func (s *AIAutoBanService) getRawAIBanConfig() map[string]interface{} {
 			config[k] = v
 		}
 	}
+	normalizeAIBanConfig(config)
 	return config
 }
 
@@ -164,6 +167,16 @@ func configInt(config map[string]interface{}, key string, fallback int64) int64 
 		return fallback
 	}
 	return toInt64(config[key])
+}
+
+func configFloat(config map[string]interface{}, key string, fallback float64) float64 {
+	if config == nil {
+		return fallback
+	}
+	if _, ok := config[key]; !ok {
+		return fallback
+	}
+	return toFloat64(config[key])
 }
 
 func configStringSlice(config map[string]interface{}, key string) []string {
@@ -221,6 +234,47 @@ func (s *AIAutoBanService) validateAIBanRuntimeConfig(config map[string]interfac
 		return errors.New("未选择 AI 模型")
 	}
 	return nil
+}
+
+func normalizeAIBanConfig(config map[string]interface{}) {
+	if config == nil {
+		return
+	}
+	if _, ok := WindowSeconds[configString(config, "scan_window")]; !ok {
+		config["scan_window"] = aiBanDefaultScanWindow
+	}
+	scanLimit := configInt(config, "scan_limit", aiBanDefaultScanLimit)
+	if scanLimit <= 0 {
+		scanLimit = aiBanDefaultScanLimit
+	}
+	if scanLimit > 100 {
+		scanLimit = 100
+	}
+	config["scan_limit"] = scanLimit
+
+	score := configFloat(config, "risk_score_threshold", aiBanDefaultRiskScore)
+	if score <= 0 || score > 10 {
+		score = aiBanDefaultRiskScore
+	}
+	config["risk_score_threshold"] = score
+
+	confidence := configFloat(config, "confidence_threshold", aiBanDefaultConfidence)
+	if confidence <= 0 || confidence > 1 {
+		confidence = aiBanDefaultConfidence
+	}
+	config["confidence_threshold"] = confidence
+}
+
+func aiBanThresholdPolicy(config map[string]interface{}) (float64, float64) {
+	score := configFloat(config, "risk_score_threshold", aiBanDefaultRiskScore)
+	if score <= 0 || score > 10 {
+		score = aiBanDefaultRiskScore
+	}
+	confidence := configFloat(config, "confidence_threshold", aiBanDefaultConfidence)
+	if confidence <= 0 || confidence > 1 {
+		confidence = aiBanDefaultConfidence
+	}
+	return score, confidence
 }
 
 func (s *AIAutoBanService) getWhitelistIDs() []int64 {
@@ -390,6 +444,7 @@ func (s *AIAutoBanService) assessUser(userID int64, window string, opts aiBanAss
 	if err != nil {
 		return s.assessmentFallback(userID, window, "analysis_error", "读取风险画像失败: "+err.Error()), err
 	}
+	analysis["multi_window_summary"] = s.buildAIBanMultiWindowSummary(userID, window, seconds, config)
 	if user, ok := analysis["user"].(map[string]interface{}); ok {
 		if display := toString(user["display_name"]); display != "" {
 			username = display
@@ -485,8 +540,9 @@ func (s *AIAutoBanService) assessUser(userID int64, window string, opts aiBanAss
 	}
 
 	assessment.APIDurationMS = time.Since(start).Milliseconds()
-	normalizeAIBanAssessment(&assessment)
-	action := decideAIBanAction(assessment)
+	scoreThreshold, confidenceThreshold := aiBanThresholdPolicy(config)
+	normalizeAIBanAssessmentWithPolicy(&assessment, scoreThreshold, confidenceThreshold)
+	action := decideAIBanActionWithPolicy(assessment, scoreThreshold, confidenceThreshold)
 	assessment.Action = action
 
 	return map[string]interface{}{
@@ -502,7 +558,7 @@ func (s *AIAutoBanService) assessUser(userID int64, window string, opts aiBanAss
 		"assessment":     assessmentToMap(assessment),
 		"assessed":       true,
 		"assessed_at":    time.Now().Unix(),
-		"auto_eligible":  isAutoBanEligible(assessment),
+		"auto_eligible":  isAutoBanEligibleWithPolicy(assessment, scoreThreshold, confidenceThreshold),
 		"manual_result":  opts.manualResult,
 		"analysis_range": analysis["range"],
 	}, nil
@@ -531,11 +587,12 @@ func (s *AIAutoBanService) buildAIBanPrompt(config map[string]interface{}, analy
 	if custom := configString(config, "custom_prompt"); custom != "" {
 		systemPrompt += "\n\n管理员补充规则：\n" + renderAIBanCustomPrompt(custom, config, analysis, ipHits)
 	}
+	scoreThreshold, confidenceThreshold := aiBanThresholdPolicy(config)
 
 	payload := map[string]interface{}{
 		"review_goal": "判断该用户近期调用行为是否需要封禁",
 		"threshold_policy": map[string]interface{}{
-			"auto_ban_requires": "should_ban=true 且 risk_score>=8 且 confidence>=0.75",
+			"auto_ban_requires": fmt.Sprintf("should_ban=true 且 risk_score>=%.1f 且 confidence>=%.2f", scoreThreshold, confidenceThreshold),
 			"dry_run_note":      "系统可能处于试运行模式，AI 只负责给出风险判断",
 		},
 		"analysis":       compactAIBanAnalysis(analysis),
@@ -551,7 +608,7 @@ func (s *AIAutoBanService) buildAIBanPrompt(config map[string]interface{}, analy
 
 func compactAIBanAnalysis(analysis map[string]interface{}) map[string]interface{} {
 	out := map[string]interface{}{}
-	for _, key := range []string{"range", "user", "summary", "risk", "top_models", "top_channels", "top_ips"} {
+	for _, key := range []string{"range", "user", "summary", "risk", "multi_window_summary", "top_models", "top_channels", "top_ips"} {
 		if v, ok := analysis[key]; ok {
 			out[key] = v
 		}
@@ -562,6 +619,32 @@ func compactAIBanAnalysis(analysis map[string]interface{}) map[string]interface{
 			limit = len(logs)
 		}
 		out["recent_logs"] = logs[:limit]
+	}
+	return out
+}
+
+func (s *AIAutoBanService) buildAIBanMultiWindowSummary(userID int64, primaryWindow string, primarySeconds int64, config map[string]interface{}) []map[string]interface{} {
+	blacklistIPs := configStringSlice(config, "blacklist_ips")
+	windows := []struct {
+		key     string
+		seconds int64
+	}{
+		{key: primaryWindow, seconds: primarySeconds},
+		{key: "1h", seconds: WindowSeconds["1h"]},
+		{key: "24h", seconds: WindowSeconds["24h"]},
+		{key: "7d", seconds: WindowSeconds["7d"]},
+	}
+
+	seen := map[string]bool{}
+	out := make([]map[string]interface{}, 0, len(windows))
+	for _, w := range windows {
+		if w.key == "" || w.seconds <= 0 || seen[w.key] {
+			continue
+		}
+		seen[w.key] = true
+		summary := s.getAIBanWindowSummary(userID, w.key, w.seconds, blacklistIPs)
+		summary["is_primary"] = w.key == primaryWindow
+		out = append(out, summary)
 	}
 	return out
 }
@@ -886,6 +969,10 @@ func looseStringField(text, key string) string {
 }
 
 func normalizeAIBanAssessment(a *aiBanAssessment) {
+	normalizeAIBanAssessmentWithPolicy(a, aiBanDefaultRiskScore, aiBanDefaultConfidence)
+}
+
+func normalizeAIBanAssessmentWithPolicy(a *aiBanAssessment, scoreThreshold, confidenceThreshold float64) {
 	if a.RiskScore < 0 {
 		a.RiskScore = 0
 	}
@@ -899,27 +986,35 @@ func normalizeAIBanAssessment(a *aiBanAssessment) {
 		a.Confidence = 1
 	}
 	a.ModelShouldBan = a.ShouldBan
-	if !isAutoBanEligible(*a) && a.Action == "ban" {
+	if !isAutoBanEligibleWithPolicy(*a, scoreThreshold, confidenceThreshold) && a.Action == "ban" {
 		if a.RiskScore >= 5 {
 			a.Action = "warn"
 		} else {
 			a.Action = "monitor"
 		}
 	}
-	a.ShouldBan = isAutoBanEligible(*a)
+	a.ShouldBan = isAutoBanEligibleWithPolicy(*a, scoreThreshold, confidenceThreshold)
 }
 
 func isAutoBanEligible(a aiBanAssessment) bool {
-	return a.ShouldBan && a.RiskScore >= aiBanAutoBanRiskScore && a.Confidence >= aiBanAutoBanConfidence
+	return isAutoBanEligibleWithPolicy(a, aiBanDefaultRiskScore, aiBanDefaultConfidence)
+}
+
+func isAutoBanEligibleWithPolicy(a aiBanAssessment, scoreThreshold, confidenceThreshold float64) bool {
+	return a.ShouldBan && a.RiskScore >= scoreThreshold && a.Confidence >= confidenceThreshold
 }
 
 func decideAIBanAction(a aiBanAssessment) string {
+	return decideAIBanActionWithPolicy(a, aiBanDefaultRiskScore, aiBanDefaultConfidence)
+}
+
+func decideAIBanActionWithPolicy(a aiBanAssessment, scoreThreshold, confidenceThreshold float64) string {
 	switch a.Action {
 	case "normal", "monitor", "warn", "ban":
 	default:
 		a.Action = ""
 	}
-	if isAutoBanEligible(a) {
+	if isAutoBanEligibleWithPolicy(a, scoreThreshold, confidenceThreshold) {
 		return "ban"
 	}
 	if a.Action == "warn" || a.RiskScore >= 7 {
@@ -1147,7 +1242,19 @@ func (s *AIAutoBanService) RunScheduledScan() map[string]interface{} {
 		return map[string]interface{}{"skipped": true, "message": "未到下次扫描时间"}
 	}
 
-	result := s.RunScan("1h", 20)
+	scanWindow := configString(config, "scan_window")
+	if _, ok := WindowSeconds[scanWindow]; !ok {
+		scanWindow = aiBanDefaultScanWindow
+	}
+	scanLimit := int(configInt(config, "scan_limit", aiBanDefaultScanLimit))
+	if scanLimit <= 0 {
+		scanLimit = aiBanDefaultScanLimit
+	}
+	if scanLimit > 100 {
+		scanLimit = 100
+	}
+
+	result := s.RunScan(scanWindow, scanLimit)
 	cm.Set(aiBanLastScanKey, now, 0)
 	return result
 }

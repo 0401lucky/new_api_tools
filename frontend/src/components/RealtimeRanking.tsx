@@ -14,6 +14,11 @@ import { UserAnalysisDialog, BAN_REASONS, UNBAN_REASONS, RISK_FLAG_LABELS } from
 
 type WindowKey = '1h' | '3h' | '6h' | '12h' | '24h' | '3d' | '7d'
 type SortKey = 'requests' | 'quota' | 'failure_rate'
+const AI_DEFAULT_SCAN_WINDOW: WindowKey = '24h'
+const AI_DEFAULT_SCAN_LIMIT = 50
+const AI_DEFAULT_RISK_SCORE_THRESHOLD = 8
+const AI_DEFAULT_CONFIDENCE_THRESHOLD = 0.75
+const WINDOW_KEYS: WindowKey[] = ['1h', '3h', '6h', '12h', '24h', '3d', '7d']
 
 interface LeaderboardItem {
   user_id: number
@@ -30,6 +35,16 @@ interface LeaderboardItem {
 
 const WINDOW_LABELS: Record<WindowKey, string> = { '1h': '1小时内', '3h': '3小时内', '6h': '6小时内', '12h': '12小时内', '24h': '24小时内', '3d': '3天内', '7d': '7天内' }
 const SORT_LABELS: Record<SortKey, string> = { requests: '请求次数', quota: '额度消耗', failure_rate: '失败率' }
+
+const normalizeWindowKey = (window?: string): WindowKey => {
+  return WINDOW_KEYS.includes(window as WindowKey) ? window as WindowKey : AI_DEFAULT_SCAN_WINDOW
+}
+
+const clampNumber = (value: unknown, min: number, max: number, fallback: number) => {
+  const raw = Number(value)
+  if (!Number.isFinite(raw)) return fallback
+  return Math.min(max, Math.max(min, raw))
+}
 
 const REASON_STYLES: Record<string, string> = {
   '请求频率过高': 'bg-red-50 text-red-700 border-red-100 dark:bg-red-900/20 dark:text-red-400',
@@ -749,6 +764,10 @@ export function RealtimeRanking() {
     has_api_key: boolean
     masked_api_key?: string
     scan_interval_minutes?: number
+    scan_window?: string
+    scan_limit?: number
+    risk_score_threshold?: number
+    confidence_threshold?: number
     whitelist_count?: number
     custom_prompt?: string
     default_prompt?: string
@@ -826,6 +845,10 @@ export function RealtimeRanking() {
     enabled: false,
     dry_run: true,
     scan_interval_minutes: 0,  // 0 表示关闭定时扫描
+    scan_window: AI_DEFAULT_SCAN_WINDOW,
+    scan_limit: AI_DEFAULT_SCAN_LIMIT,
+    risk_score_threshold: AI_DEFAULT_RISK_SCORE_THRESHOLD,
+    confidence_threshold: AI_DEFAULT_CONFIDENCE_THRESHOLD,
   })
   const [aiModels, setAiModels] = useState<Array<{ id: string; owned_by: string }>>([])
   const [aiModelLoading, setAiModelLoading] = useState(false)
@@ -843,6 +866,22 @@ export function RealtimeRanking() {
   const [aiConfigExpanded, setAiConfigExpanded] = useState(false)
   const [isAiLogicModalOpen, setIsAiLogicModalOpen] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
+  const aiScanWindow = useMemo(() => normalizeWindowKey(aiConfig?.scan_window), [aiConfig?.scan_window])
+  const aiScanLimit = useMemo(() => {
+    return clampNumber(aiConfig?.scan_limit, 1, 100, AI_DEFAULT_SCAN_LIMIT)
+  }, [aiConfig?.scan_limit])
+  const aiRiskScoreThreshold = useMemo(() => {
+    return clampNumber(aiConfig?.risk_score_threshold, 0.1, 10, AI_DEFAULT_RISK_SCORE_THRESHOLD)
+  }, [aiConfig?.risk_score_threshold])
+  const aiConfidenceThreshold = useMemo(() => {
+    return clampNumber(aiConfig?.confidence_threshold, 0.01, 1, AI_DEFAULT_CONFIDENCE_THRESHOLD)
+  }, [aiConfig?.confidence_threshold])
+  const aiRiskScoreThresholdLabel = useMemo(() => {
+    return aiRiskScoreThreshold.toFixed(1).replace(/\.0$/, '')
+  }, [aiRiskScoreThreshold])
+  const aiConfidenceThresholdLabel = useMemo(() => {
+    return `${(aiConfidenceThreshold * 100).toFixed(0)}%`
+  }, [aiConfidenceThreshold])
   const [selectedAuditLog, setSelectedAuditLog] = useState<{
     id: number
     scan_id: string
@@ -1321,10 +1360,10 @@ export function RealtimeRanking() {
   const fetchAiSuspiciousUsers = useCallback(async (showSuccessToast = false) => {
     setAiLoading(true)
     try {
-      const response = await fetch(`${apiUrl}/api/ai-ban/suspicious-users?window=1h&limit=20`, { headers: getAuthHeaders() })
+      const response = await fetch(`${apiUrl}/api/ai-ban/suspicious-users?window=${aiScanWindow}&limit=${aiScanLimit}`, { headers: getAuthHeaders() })
       const res = await response.json()
       if (res.success) {
-        setAiSuspiciousUsers(res.data?.items || [])
+        setAiSuspiciousUsers(Array.isArray(res.data) ? res.data : (res.data?.items || []))
         if (showSuccessToast) showToast('success', '已刷新')
       } else {
         showToast('error', res.message || '获取可疑用户失败')
@@ -1335,7 +1374,7 @@ export function RealtimeRanking() {
     } finally {
       setAiLoading(false)
     }
-  }, [apiUrl, getAuthHeaders, showToast])
+  }, [apiUrl, getAuthHeaders, showToast, aiScanWindow, aiScanLimit])
 
   const handleAiAssess = async (userId: number) => {
     setAiAssessing(userId)
@@ -1344,7 +1383,7 @@ export function RealtimeRanking() {
       const response = await fetch(`${apiUrl}/api/ai-ban/assess`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ user_id: userId, window: '1h' }),
+        body: JSON.stringify({ user_id: userId, window: aiScanWindow }),
       })
       const res = await response.json()
       if (res.success) {
@@ -1364,7 +1403,7 @@ export function RealtimeRanking() {
   const handleAiScan = async () => {
     setAiScanning(true)
     try {
-      const response = await fetch(`${apiUrl}/api/ai-ban/scan?window=1h&limit=10`, {
+      const response = await fetch(`${apiUrl}/api/ai-ban/scan?window=${aiScanWindow}&limit=${aiScanLimit}`, {
         method: 'POST',
         headers: getAuthHeaders(),
       })
@@ -1462,6 +1501,10 @@ export function RealtimeRanking() {
   }
 
   const handleSaveAiConfig = async () => {
+    const scanLimit = Math.round(clampNumber(aiConfigEdit.scan_limit, 1, 100, AI_DEFAULT_SCAN_LIMIT))
+    const riskScoreThreshold = clampNumber(aiConfigEdit.risk_score_threshold, 0.1, 10, AI_DEFAULT_RISK_SCORE_THRESHOLD)
+    const confidenceThreshold = clampNumber(aiConfigEdit.confidence_threshold, 0.01, 1, AI_DEFAULT_CONFIDENCE_THRESHOLD)
+
     setAiSaving(true)
     try {
       const response = await fetch(`${apiUrl}/api/ai-ban/config`, {
@@ -1474,6 +1517,10 @@ export function RealtimeRanking() {
           enabled: aiConfigEdit.enabled,
           dry_run: aiConfigEdit.dry_run,
           scan_interval_minutes: aiConfigEdit.scan_interval_minutes,
+          scan_window: normalizeWindowKey(aiConfigEdit.scan_window),
+          scan_limit: scanLimit,
+          risk_score_threshold: riskScoreThreshold,
+          confidence_threshold: confidenceThreshold,
         }),
       })
       const res = await response.json()
@@ -1557,6 +1604,10 @@ export function RealtimeRanking() {
         enabled: aiConfig.enabled,
         dry_run: aiConfig.dry_run,
         scan_interval_minutes: aiConfig.scan_interval_minutes || 0,
+        scan_window: normalizeWindowKey(aiConfig.scan_window),
+        scan_limit: Math.round(clampNumber(aiConfig.scan_limit, 1, 100, AI_DEFAULT_SCAN_LIMIT)),
+        risk_score_threshold: clampNumber(aiConfig.risk_score_threshold, 0.1, 10, AI_DEFAULT_RISK_SCORE_THRESHOLD),
+        confidence_threshold: clampNumber(aiConfig.confidence_threshold, 0.01, 1, AI_DEFAULT_CONFIDENCE_THRESHOLD),
       })
     }
   }, [aiConfig, aiConfigExpanded])
@@ -3766,6 +3817,60 @@ export function RealtimeRanking() {
                           <option value={1440}>每 24 小时</option>
                         </Select>
                       </div>
+
+                      <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-slate-700">分析窗口</label>
+                          <Select
+                            value={aiConfigEdit.scan_window}
+                            onChange={(e) => setAiConfigEdit(prev => ({ ...prev, scan_window: normalizeWindowKey(e.target.value) }))}
+                            className="h-10 bg-slate-50 border-slate-200 focus:bg-white"
+                          >
+                            {WINDOW_KEYS.map((window) => (
+                              <option key={window} value={window}>{WINDOW_LABELS[window]}</option>
+                            ))}
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-slate-700">每轮人数</label>
+                          <Select
+                            value={aiConfigEdit.scan_limit}
+                            onChange={(e) => setAiConfigEdit(prev => ({ ...prev, scan_limit: parseInt(e.target.value) }))}
+                            className="h-10 bg-slate-50 border-slate-200 focus:bg-white"
+                          >
+                            <option value={20}>20 人</option>
+                            <option value={50}>50 人</option>
+                            <option value={100}>100 人</option>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-slate-700">封禁风险分</label>
+                          <Input
+                            type="number"
+                            min={0.1}
+                            max={10}
+                            step={0.1}
+                            value={aiConfigEdit.risk_score_threshold}
+                            onChange={(e) => setAiConfigEdit(prev => ({ ...prev, risk_score_threshold: Number(e.target.value) }))}
+                            className="h-10 bg-slate-50 border-slate-200 focus:bg-white"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-slate-700">封禁置信度</label>
+                          <Input
+                            type="number"
+                            min={0.01}
+                            max={1}
+                            step={0.01}
+                            value={aiConfigEdit.confidence_threshold}
+                            onChange={(e) => setAiConfigEdit(prev => ({ ...prev, confidence_threshold: Number(e.target.value) }))}
+                            className="h-10 bg-slate-50 border-slate-200 focus:bg-white"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3812,9 +3917,9 @@ export function RealtimeRanking() {
                   )}
                 </div>
                 <div className="text-blue-700/80 mt-1 leading-relaxed">
-                  AI 扫描上次运行为 {aiConfig?.scan_interval_minutes ? '自动执行' : '手动执行'}.
+                  AI 扫描当前使用 {WINDOW_LABELS[aiScanWindow]} 行为数据，每轮最多分析 {aiScanLimit} 人。
                   {(aiConfig?.scan_interval_minutes ?? 0) > 0
-                    ? ` 下次计划扫描在 ${(aiConfig?.scan_interval_minutes ?? 0)} 分钟后。`
+                    ? ` 自动扫描间隔为 ${(aiConfig?.scan_interval_minutes ?? 0)} 分钟。`
                     : ' 自动扫描已禁用。'}
                 </div>
               </div>
@@ -3884,7 +3989,7 @@ export function RealtimeRanking() {
                             completion_tokens: 0,
                             unique_ips: user.unique_ips,
                           }
-                          openUserDialog(mockItem, '1h')
+                          openUserDialog(mockItem, aiScanWindow)
                         }}
                         onAssess={() => handleAiAssess(user.user_id)}
                       />
@@ -3956,7 +4061,7 @@ export function RealtimeRanking() {
                                       completion_tokens: 0,
                                       unique_ips: user.unique_ips,
                                     }
-                                    openUserDialog(mockItem, '1h')
+                                    openUserDialog(mockItem, aiScanWindow)
                                   }}
                                 >
                                   <Eye className="h-4 w-4" />
@@ -4350,11 +4455,13 @@ export function RealtimeRanking() {
                     <div className="space-y-2 z-10 flex-1">
                       <div className="flex items-center justify-between p-2 rounded-lg bg-red-50/50 border border-red-100">
                         <span className="font-bold text-xs text-red-700">封禁 (Ban)</span>
-                        <span className="text-[10px] text-red-600/80">评分&ge;8 & 置信度&ge;0.8</span>
+                        <span className="text-[10px] text-red-600/80">
+                          评分&ge;{aiRiskScoreThresholdLabel} & 置信度&ge;{aiConfidenceThresholdLabel}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50/50 border border-amber-100">
                         <span className="font-bold text-xs text-amber-700">告警 (Warn)</span>
-                        <span className="text-[10px] text-amber-600/80">评分&ge;6 或 置信度不足</span>
+                        <span className="text-[10px] text-amber-600/80">评分&ge;6 或未达封禁阈值</span>
                       </div>
                     </div>
                   </div>

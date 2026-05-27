@@ -33,6 +33,10 @@ var defaultAIBanConfig = map[string]interface{}{
 	"enabled":               false,
 	"dry_run":               true,
 	"scan_interval_minutes": 30,
+	"scan_window":           "24h",
+	"scan_limit":            50,
+	"risk_score_threshold":  8.0,
+	"confidence_threshold":  0.75,
 	"custom_prompt":         "",
 	"whitelist_ips":         []string{},
 	"blacklist_ips":         []string{},
@@ -78,6 +82,7 @@ func (s *AIAutoBanService) SaveConfig(updates map[string]interface{}) error {
 
 	// Strip computed fields before saving (they are re-computed in GetConfig)
 	stripComputedAIBanConfig(config)
+	normalizeAIBanConfig(config)
 
 	return s.saveAIBanJSON(aiBanConfigKey, config)
 }
@@ -409,6 +414,53 @@ func (s *AIAutoBanService) enrichAIBanCandidate(row map[string]interface{}, star
 	row["blacklist_ips"] = blacklistHits
 	row["blacklist_hit_count"] = len(blacklistHits)
 	row["suspicion_score"] = mathRound(score, 2)
+}
+
+func (s *AIAutoBanService) getAIBanWindowSummary(userID int64, window string, seconds int64, blacklistIPs []string) map[string]interface{} {
+	startTime := time.Now().Unix() - seconds
+	query := s.db.RebindQuery(`
+		SELECT COUNT(*) as total_requests,
+			SUM(CASE WHEN type = 5 THEN 1 ELSE 0 END) as failure_count,
+			SUM(CASE WHEN type = 2 AND COALESCE(completion_tokens, 0) = 0 THEN 1 ELSE 0 END) as empty_count,
+			COALESCE(SUM(quota), 0) as total_quota,
+			COUNT(DISTINCT NULLIF(ip, '')) as unique_ips,
+			COUNT(DISTINCT NULLIF(model_name, '')) as unique_models,
+			COUNT(DISTINCT token_id) as unique_tokens
+		FROM logs
+		WHERE user_id = ? AND created_at >= ? AND type IN (2, 5)`)
+	row, err := s.db.QueryOneWithTimeout(10*time.Second, query, userID, startTime)
+	if err != nil || row == nil {
+		row = map[string]interface{}{}
+	}
+
+	total := toInt64(row["total_requests"])
+	failures := toInt64(row["failure_count"])
+	emptyCount := toInt64(row["empty_count"])
+	failureRate := 0.0
+	emptyRate := 0.0
+	rpm := 0.0
+	if total > 0 {
+		failureRate = float64(failures) / float64(total) * 100
+		emptyRate = float64(emptyCount) / float64(total) * 100
+		rpm = float64(total) / (float64(seconds) / 60.0)
+	}
+
+	blacklistHits := collectIPHitsFromSequence(s.getAIBanIPSequence(userID, startTime, 1000), blacklistIPs)
+	return map[string]interface{}{
+		"window":              window,
+		"total_requests":      total,
+		"failure_count":       failures,
+		"empty_count":         emptyCount,
+		"total_quota":         toInt64(row["total_quota"]),
+		"unique_ips":          toInt64(row["unique_ips"]),
+		"unique_models":       toInt64(row["unique_models"]),
+		"unique_tokens":       toInt64(row["unique_tokens"]),
+		"failure_rate":        mathRound(failureRate, 2),
+		"empty_rate":          mathRound(emptyRate, 2),
+		"rpm":                 mathRound(rpm, 2),
+		"blacklist_hit_count": len(blacklistHits),
+		"blacklist_ips":       blacklistHits,
+	}
 }
 
 func (s *AIAutoBanService) getAIBanIPSequence(userID int64, startTime int64, limit int) []map[string]interface{} {

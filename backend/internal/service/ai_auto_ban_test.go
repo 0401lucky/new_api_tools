@@ -94,6 +94,30 @@ func seedAIBanUser(t *testing.T, role int) {
 	}
 }
 
+func seedAIBanUserWithOldLogs(t *testing.T) {
+	t.Helper()
+	db := NewAIAutoBanService().db.DB
+	if _, err := db.Exec(`INSERT INTO users (id, username, display_name, status, "group", role, request_count)
+		VALUES (1, 'alice', 'Alice', 1, 'default', 1, 100)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO tokens (id, user_id, status) VALUES (10, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+
+	// 保证日志超过 1 小时但仍在默认的 24 小时扫描窗口内。
+	baseTime := time.Now().Unix() - 2*3600
+	for i := 0; i < 12; i++ {
+		if _, err := db.Exec(`INSERT INTO logs (
+			user_id, username, created_at, type, model_name, quota, prompt_tokens,
+			completion_tokens, use_time, ip, channel_id, channel_name, token_id, token_name, "group"
+		) VALUES (1, 'alice', ?, 5, 'gpt-test', 100, 50, 0, 1.2, '203.0.113.8', 1, 'openai', 10, 'main', 'default')`,
+			baseTime+int64(i*10)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func seedAIBanSwitchingUser(t *testing.T) {
 	t.Helper()
 	db := NewAIAutoBanService().db.DB
@@ -446,6 +470,38 @@ func TestAIBanRunScanDryRunDoesNotMutateUser(t *testing.T) {
 	}
 	if toInt64(token["status"]) != 1 {
 		t.Fatalf("dry run should not disable token, status=%v", token["status"])
+	}
+}
+
+func TestAIBanRunScheduledScanUsesDefaultWindowForLegacyConfig(t *testing.T) {
+	clearAIBanTestCache(t)
+	installAIBanSchema(t)
+	seedAIBanUserWithOldLogs(t)
+	server := mockAIBanServer(t, `{"should_ban":true,"risk_score":9,"confidence":0.9,"action":"ban","reason":"24 小时窗口内高失败率"}`)
+	defer server.Close()
+
+	// 直接写入旧配置形态，刻意不包含 scan_window，验证调度扫描会补默认值。
+	if err := cache.Get().Set(aiBanConfigKey, map[string]interface{}{
+		"base_url":              server.URL,
+		"api_key":               "test-key",
+		"model":                 "gpt-test",
+		"enabled":               true,
+		"dry_run":               true,
+		"scan_interval_minutes": 1,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	result := NewAIAutoBanService().RunScheduledScan()
+	stats, ok := result["stats"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("scheduled scan should run, got %#v", result)
+	}
+	if stats["window"] != "24h" {
+		t.Fatalf("legacy config should use default 24h window, got %#v", stats)
+	}
+	if toInt64(stats["banned_count"]) != 1 {
+		t.Fatalf("24h scheduled scan should find old suspicious user, got %#v", stats)
 	}
 }
 

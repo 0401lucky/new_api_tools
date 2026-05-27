@@ -117,7 +117,7 @@ func GetAvailableModelsForExclude(c *gin.Context) {
 
 // GET /api/ai-ban/suspicious
 func GetSuspiciousUsers(c *gin.Context) {
-	window := c.DefaultQuery("window", "1h")
+	window := c.DefaultQuery("window", "24h")
 	if !validWindow(window) {
 		c.JSON(http.StatusBadRequest, models.ErrorResp("INVALID_PARAMS", "Invalid window value", ""))
 		return
@@ -144,7 +144,7 @@ func ManualAssess(c *gin.Context) {
 		return
 	}
 	if req.Window == "" {
-		req.Window = "1h"
+		req.Window = "24h"
 	}
 	svc := service.NewAIAutoBanService()
 	data := svc.ManualAssess(req.UserID, req.Window)
@@ -153,7 +153,7 @@ func ManualAssess(c *gin.Context) {
 
 // POST /api/ai-ban/scan
 func RunAIBanScan(c *gin.Context) {
-	window := c.DefaultQuery("window", "1h")
+	window := c.DefaultQuery("window", "24h")
 	if !validWindow(window) {
 		c.JSON(http.StatusBadRequest, models.ErrorResp("INVALID_PARAMS", "Invalid window value", ""))
 		return
