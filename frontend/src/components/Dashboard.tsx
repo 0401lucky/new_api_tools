@@ -477,11 +477,11 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="min-w-0 space-y-5 sm:space-y-8 animate-in fade-in duration-500">
       {/* 大型系统刷新确认对话框 */}
       {showRefreshConfirm && refreshEstimate?.show_estimate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-background border rounded-lg shadow-lg p-6 max-w-md mx-4 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border rounded-lg shadow-lg p-4 sm:p-6 w-full max-w-md animate-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
                 <Database className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
@@ -533,8 +533,8 @@ export function Dashboard() {
 
       {/* 大型系统刷新进度覆盖层 */}
       {refreshing && refreshProgress && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-background border rounded-lg shadow-lg p-8 max-w-sm mx-4 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border rounded-lg shadow-lg p-5 sm:p-8 w-full max-w-sm animate-in zoom-in-95 duration-200">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-12 w-12 animate-spin text-primary" />
               <div className="text-center">
@@ -552,26 +552,26 @@ export function Dashboard() {
       )}
 
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">仪表盘</h2>
-          <p className="text-muted-foreground mt-1">系统运行状态与实时数据概览</p>
+      <div className="flex min-w-0 flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">仪表盘</h2>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">系统运行状态与实时数据概览</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
           {/* 刷新按钮和自动刷新控制 */}
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="h-9">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="h-9 flex-1 px-3 sm:flex-none">
               <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
               {refreshing ? '刷新中...' : '刷新'}
             </Button>
 
             {/* 自动刷新下拉菜单 */}
-            <div className="relative" ref={dropdownRef}>
+            <div className="relative flex-1 sm:flex-none" ref={dropdownRef}>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
-                className="h-9 min-w-[100px]"
+                className="h-9 w-full min-w-0 px-3 sm:min-w-[100px]"
               >
                 <Timer className="h-4 w-4 mr-2" />
                 {refreshInterval > 0 ? (
@@ -585,7 +585,7 @@ export function Dashboard() {
               </Button>
 
               {showIntervalDropdown && (
-                <div className="absolute right-0 mt-1 w-48 bg-popover border rounded-md shadow-lg z-50">
+                <div className="absolute right-0 mt-1 w-48 max-w-[calc(100vw-2rem)] bg-popover border rounded-md shadow-lg z-50">
                   <div className="p-2 border-b">
                     <p className="text-xs text-muted-foreground">刷新间隔</p>
                   </div>
@@ -616,14 +616,14 @@ export function Dashboard() {
           </div>
 
           {/* 时间范围选择 */}
-          <div className="inline-flex rounded-lg border bg-muted/50 p-1">
+          <div className="grid w-full grid-cols-4 rounded-lg border bg-muted/50 p-1 sm:inline-flex sm:w-auto">
             {(['24h', '3d', '7d', '14d'] as PeriodType[]).map((p) => (
               <Button
                 key={p}
                 variant={period === p ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => { setDailyTrends([]); setPeriod(p) }}
-                className="h-7 text-xs px-3"
+                className="h-8 px-1.5 text-[11px] sm:h-7 sm:px-3 sm:text-xs"
               >
                 {p === '24h' ? '24小时' : p === '3d' ? '3天' : p === '7d' ? '7天' : '14天'}
               </Button>
@@ -633,12 +633,12 @@ export function Dashboard() {
       </div>
 
       {/* System Overview Section */}
-      <section className="space-y-4">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
+      <section className="space-y-3 sm:space-y-4">
+        <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
           <Database className="w-5 h-5 text-primary" />
           平台资源
         </h3>
-        <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
           <StatCard
             title="用户总数"
             value={overview?.total_users || 0}
@@ -678,12 +678,12 @@ export function Dashboard() {
       </section>
 
       {/* Usage Statistics Section */}
-      <section className="space-y-4">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
+      <section className="space-y-3 sm:space-y-4">
+        <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
           <Activity className="w-5 h-5 text-primary" />
           流量分析 ({getPeriodLabel()})
         </h3>
-        <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
           <StatCard
             title="请求总数"
             value={formatNumber(usage?.total_requests || 0)}
@@ -736,35 +736,35 @@ export function Dashboard() {
 
 
       {/* Main Charts Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+      <div className="grid min-w-0 grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
         {/* Daily Trends Chart */}
-        <div className="flex flex-col h-full">
+        <div className="min-w-0 flex flex-col h-full">
           <TrendChart data={dailyTrends} period={period} loading={loading} totalRequests={Number(usage?.total_requests || 0)} />
         </div>
 
         {/* Model Usage List */}
-        <Card className="col-span-1 shadow-sm hover:shadow-md transition-shadow duration-200 flex flex-col h-full">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
+        <Card className="col-span-1 min-w-0 shadow-sm hover:shadow-md transition-shadow duration-200 flex flex-col h-full">
+          <CardHeader className="p-4 pb-2 sm:p-6 sm:pb-4">
+            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
               <Box className="w-5 h-5 text-muted-foreground" />
               模型使用分布
             </CardTitle>
-            <CardDescription>{getPeriodLabel()}内 Top 8 活跃模型</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">{getPeriodLabel()}内 Top 8 活跃模型</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-hidden">
+          <CardContent className="flex-1 overflow-hidden px-4 pb-4 sm:px-6 sm:pb-6">
             {models.length > 0 ? (
-              <div className="h-full flex flex-col justify-around min-h-[300px] py-2">
+              <div className="h-full flex flex-col justify-around min-h-[240px] sm:min-h-[300px] py-1 sm:py-2">
                 {models.map((model, index) => {
                   const maxRequests = getMaxValue(models.map(m => m.request_count))
                   const percentage = (model.request_count / maxRequests) * 100
                   const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-orange-500', 'bg-pink-500', 'bg-cyan-500', 'bg-yellow-500', 'bg-rose-500']
                   return (
-                    <div key={index} className="space-y-1 group">
-                      <div className="flex justify-between text-xs sm:text-sm items-center">
-                        <span className="font-medium truncate max-w-[150px] sm:max-w-[200px]" title={model.model_name}>
+                    <div key={index} className="min-w-0 space-y-1 group">
+                      <div className="flex min-w-0 justify-between gap-2 text-xs sm:text-sm items-center">
+                        <span className="min-w-0 font-medium truncate max-w-[150px] sm:max-w-[200px]" title={model.model_name}>
                           {model.model_name}
                         </span>
-                        <span className="text-muted-foreground tabular-nums">{formatNumber(model.request_count)}</span>
+                        <span className="shrink-0 text-muted-foreground tabular-nums">{formatNumber(model.request_count)}</span>
                       </div>
                       <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
                         <div
@@ -777,7 +777,7 @@ export function Dashboard() {
                 })}
               </div>
             ) : (
-              <div className="h-full min-h-[300px] flex items-center justify-center text-muted-foreground bg-muted/20 rounded-lg">
+              <div className="h-full min-h-[240px] sm:min-h-[300px] flex items-center justify-center text-muted-foreground bg-muted/20 rounded-lg">
                 暂无数据
               </div>
             )}
@@ -786,7 +786,7 @@ export function Dashboard() {
       </div>
 
       {/* Analytics Kings */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid min-w-0 grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         <KingCard
           title="请求之王"
           subtitle={`${getPeriodLabel()}内请求数最多`}
@@ -848,13 +848,13 @@ function StatCard({ title, value, rawValue, subValue, icon: Icon, color, variant
     const valueStr = String(value)
     const fontSize = valueStr.length > 14 ? 'text-sm' : valueStr.length > 10 ? 'text-base' : valueStr.length > 7 ? 'text-lg' : 'text-xl'
     return (
-      <Card className={cn("glass-card overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 group border-l-4", `border-l-${color}-500`)}>
-        <CardContent className="p-4 flex items-center justify-between relative overflow-hidden">
+      <Card className={cn("glass-card min-w-0 overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 group border-l-4", `border-l-${color}-500`)}>
+        <CardContent className="p-3 sm:p-4 flex items-center justify-between relative overflow-hidden">
           <div className={cn("absolute -right-4 -top-4 w-16 h-16 rounded-full opacity-10 group-hover:opacity-20 transition-opacity duration-300 blur-xl", theme.bg.split(' ')[0])} />
           <div className="space-y-1 min-w-0 flex-1 mr-2 relative z-10">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{customLabel || title}</p>
+            <p className="truncate text-[11px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wider">{customLabel || title}</p>
             <div
-              className={cn(fontSize, "font-bold tracking-tight cursor-default tabular-nums text-foreground/90")}
+              className={cn(fontSize, "truncate font-bold tracking-tight cursor-default tabular-nums text-foreground/90")}
               title={rawValue !== undefined ? rawValue.toLocaleString('zh-CN') : undefined}
             >
               {value}
@@ -869,21 +869,21 @@ function StatCard({ title, value, rawValue, subValue, icon: Icon, color, variant
   }
 
   return (
-    <Card className="glass-card overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group">
-      <CardContent className="p-5 relative overflow-hidden">
+    <Card className="glass-card min-w-0 overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group">
+      <CardContent className="p-3 sm:p-5 relative overflow-hidden">
         <div className={cn("absolute -right-6 -top-6 w-24 h-24 rounded-full opacity-10 group-hover:opacity-20 transition-opacity duration-300 blur-2xl", theme.bg.split(' ')[0])} />
-        <div className="flex justify-between items-start relative z-10">
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <div className="text-2xl font-bold tracking-tight text-foreground/90">{value.toLocaleString()}</div>
+        <div className="flex justify-between items-start gap-2 relative z-10">
+          <div className="min-w-0 space-y-1.5 sm:space-y-2">
+            <p className="truncate text-xs sm:text-sm font-medium text-muted-foreground">{title}</p>
+            <div className="truncate text-xl sm:text-2xl font-bold tracking-tight text-foreground/90">{value.toLocaleString()}</div>
           </div>
-          <div className={cn("p-3 rounded-2xl transition-all duration-300 group-hover:scale-110 shadow-sm", theme.bg)}>
-            <Icon className="w-5 h-5" />
+          <div className={cn("p-2 sm:p-3 rounded-xl sm:rounded-2xl transition-all duration-300 group-hover:scale-110 shadow-sm shrink-0", theme.bg)}>
+            <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </div>
         {subValue && (
-          <div className="mt-4 flex items-center text-xs relative z-10">
-            <span className={cn("font-medium px-2.5 py-1 rounded-full bg-secondary/80 backdrop-blur-sm shadow-sm border border-black/5 dark:border-white/5", theme.text)}>
+          <div className="mt-3 sm:mt-4 flex min-w-0 items-center text-xs relative z-10">
+            <span className={cn("min-w-0 max-w-full truncate font-medium px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-secondary/80 backdrop-blur-sm shadow-sm border border-black/5 dark:border-white/5", theme.text)}>
               {subValue}
             </span>
           </div>
@@ -906,42 +906,42 @@ interface KingCardProps {
 
 function KingCard({ title, subtitle, icon: Icon, user, valueLabel, value, gradient, accentColor }: KingCardProps) {
   return (
-    <div className={`glass-card bg-gradient-to-br ${gradient} rounded-2xl shadow-lg p-6 text-white relative overflow-hidden group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border border-white/20`}>
+    <div className={`glass-card min-w-0 bg-gradient-to-br ${gradient} rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 text-white relative overflow-hidden group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border border-white/20`}>
       {/* Background Pattern */}
       <div className="absolute top-0 right-0 -mr-4 -mt-4 opacity-10 group-hover:opacity-20 group-hover:scale-110 transition-all duration-500">
         <Icon className="w-32 h-32 rotate-12" />
       </div>
 
-      <div className="flex items-center justify-between relative z-10">
-        <div>
+      <div className="flex min-w-0 items-center justify-between relative z-10">
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Icon className="w-5 h-5 opacity-90" />
-            <p className="text-lg font-bold tracking-wide">{title}</p>
+            <Icon className="w-5 h-5 shrink-0 opacity-90" />
+            <p className="truncate text-base sm:text-lg font-bold tracking-wide">{title}</p>
           </div>
-          <p className={`text-sm mt-1 ${accentColor} opacity-90`}>{subtitle}</p>
+          <p className={`truncate text-xs sm:text-sm mt-1 ${accentColor} opacity-90`}>{subtitle}</p>
         </div>
       </div>
 
       {user ? (
-        <div className="mt-6 relative z-10">
-          <div className="flex items-center bg-white/10 p-4 rounded-lg backdrop-blur-sm border border-white/10">
-            <div className="h-12 w-12 rounded-full bg-white text-blue-600 flex items-center justify-center text-xl font-bold shadow-sm">
+        <div className="mt-4 sm:mt-6 relative z-10">
+          <div className="flex min-w-0 items-center bg-white/10 p-3 sm:p-4 rounded-lg backdrop-blur-sm border border-white/10">
+            <div className="h-10 w-10 sm:h-12 sm:w-12 shrink-0 rounded-full bg-white text-blue-600 flex items-center justify-center text-lg sm:text-xl font-bold shadow-sm">
               {user.username.charAt(0).toUpperCase()}
             </div>
-            <div className="ml-4">
-              <p className="text-xl font-bold">{user.username}</p>
-              <p className={`text-xs ${accentColor}`}>User ID: {user.user_id}</p>
+            <div className="ml-3 sm:ml-4 min-w-0">
+              <p className="truncate text-lg sm:text-xl font-bold">{user.username}</p>
+              <p className={`truncate text-xs ${accentColor}`}>User ID: {user.user_id}</p>
             </div>
           </div>
-          <div className="mt-4 flex justify-between items-end">
-            <div>
+          <div className="mt-3 sm:mt-4 flex justify-between items-end">
+            <div className="min-w-0">
               <p className={`text-xs ${accentColor} mb-1`}>{valueLabel}</p>
-              <p className="text-3xl font-bold tracking-tight">{value}</p>
+              <p className="truncate text-2xl sm:text-3xl font-bold tracking-tight">{value}</p>
             </div>
           </div>
         </div>
       ) : (
-        <div className="mt-6 h-[108px] flex flex-col items-center justify-center bg-white/5 rounded-lg border border-white/10 backdrop-blur-sm relative z-10">
+        <div className="mt-4 sm:mt-6 h-[92px] sm:h-[108px] flex flex-col items-center justify-center bg-white/5 rounded-lg border border-white/10 backdrop-blur-sm relative z-10">
           <p className="text-white/60">暂无数据</p>
         </div>
       )}

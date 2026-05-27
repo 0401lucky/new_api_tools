@@ -163,12 +163,12 @@ export function Tokens() {
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">令牌管理</h2>
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">令牌管理</h2>
           <p className="text-muted-foreground mt-1">查看所有令牌的状态与使用情况</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || loading} className="h-9">
+        <div className="flex w-full items-center gap-3 sm:w-auto">
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || loading} className="h-9 w-full sm:w-auto">
             <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
             刷新
           </Button>
@@ -221,9 +221,9 @@ export function Tokens() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <label className="text-xs font-medium text-muted-foreground">名称搜索</label>
-              <div className="relative">
+              <div className="relative min-w-0">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="text"
@@ -234,7 +234,7 @@ export function Tokens() {
                 />
               </div>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <label className="text-xs font-medium text-muted-foreground">状态</label>
               <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
                 <option value="">全部状态</option>
@@ -243,7 +243,7 @@ export function Tokens() {
                 <option value="expired">已过期</option>
               </Select>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <label className="text-xs font-medium text-muted-foreground">令牌分组</label>
               <Select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
                 <option value="">全部分组</option>
@@ -254,8 +254,8 @@ export function Tokens() {
                 ))}
               </Select>
             </div>
-            <div className="flex items-end justify-end">
-              <Button variant="ghost" size="sm" onClick={() => { setStatusFilter(''); setNameSearch(''); setGroupFilter('') }} className="text-muted-foreground hover:text-foreground">
+            <div className="flex items-end justify-stretch sm:justify-end">
+              <Button variant="ghost" size="sm" onClick={() => { setStatusFilter(''); setNameSearch(''); setGroupFilter('') }} className="w-full text-muted-foreground hover:text-foreground sm:w-auto">
                 重置筛选
               </Button>
             </div>
@@ -285,36 +285,47 @@ export function Tokens() {
             {/* Mobile cards */}
             <div className="md:hidden divide-y divide-border/60 border-t border-b">
               {tokens.map((t) => (
-                <div key={t.id} className="px-3 py-3 space-y-2 hover:bg-muted/30">
+                <div key={t.id} className="px-3 py-3 space-y-3 hover:bg-muted/30">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate" title={t.name}>{t.name || '-'} <span className="text-[11px] text-muted-foreground font-mono">#{t.id}</span></div>
-                      <code className="block mt-1 text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded truncate">{t.key}</code>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium" title={t.name}>
+                        <span className="truncate">{t.name || '-'}</span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground font-mono">#{t.id}</span>
+                      </div>
+                      <code className="block max-w-full mt-1 text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded truncate">{t.key}</code>
                     </div>
-                    {getStatusBadge(t)}
+                    <div className="shrink-0">{getStatusBadge(t)}</div>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                    <div className="text-muted-foreground">所属：
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="min-w-0 rounded-md bg-muted/30 p-2 text-muted-foreground">所属：
                       {t.user_id > 0 ? (
                         <button
                           onClick={() => { setSelectedUser({ id: t.user_id, username: t.username || `用户 #${t.user_id}` }); setAnalysisDialogOpen(true) }}
-                          className="ml-1 text-primary hover:underline"
+                          className="ml-1 max-w-full truncate align-bottom text-primary hover:underline"
                         >
                           {t.username || `#${t.user_id}`}
                         </button>
                       ) : '-'}
                     </div>
-                    <div className="text-muted-foreground">分组：{t.group || 'default'}</div>
-                    <div className="col-span-2 text-muted-foreground">
+                    <div className="min-w-0 rounded-md bg-muted/30 p-2 text-muted-foreground">
+                      <div className="truncate" title={t.group || 'default'}>分组：{t.group || 'default'}</div>
+                    </div>
+                    <div className="col-span-2 min-w-0 rounded-md bg-muted/30 p-2 text-muted-foreground">
                       额度：{t.unlimited_quota ? <span className="text-blue-600">无限</span> : <>总 {formatQuota(t.quota)} · 用 <span className="text-green-600">{formatQuota(t.used_quota)}</span></>}
                     </div>
-                    {t.models && <div className="col-span-2 text-muted-foreground truncate" title={t.models}>模型：{t.models}</div>}
-                    <div className="text-muted-foreground">创建：{formatTimestamp(t.created_time)}</div>
-                    <div className="text-muted-foreground">最后：{formatTimestamp(t.accessed_time)}</div>
+                    {t.models && <div className="col-span-2 min-w-0 rounded-md bg-muted/30 p-2 text-muted-foreground truncate" title={t.models}>模型：{t.models}</div>}
+                    <div className="min-w-0 rounded-md bg-muted/30 p-2 text-muted-foreground">
+                      <div className="text-[11px]">创建</div>
+                      <div className="truncate tabular-nums" title={formatTimestamp(t.created_time)}>{formatTimestamp(t.created_time)}</div>
+                    </div>
+                    <div className="min-w-0 rounded-md bg-muted/30 p-2 text-muted-foreground">
+                      <div className="text-[11px]">最后</div>
+                      <div className="truncate tabular-nums" title={formatTimestamp(t.accessed_time)}>{formatTimestamp(t.accessed_time)}</div>
+                    </div>
                     {t.expired_time > 0 && (
-                      <div className={cn("col-span-2 text-muted-foreground flex items-center gap-1", isTokenExpired(t.expired_time) && "text-red-500")}>
-                        {isTokenExpired(t.expired_time) && <AlertCircle className="w-3 h-3" />}
-                        过期：{formatTimestamp(t.expired_time)}
+                      <div className={cn("col-span-2 min-w-0 rounded-md bg-muted/30 p-2 text-muted-foreground flex items-center gap-1", isTokenExpired(t.expired_time) && "text-red-500")}>
+                        {isTokenExpired(t.expired_time) && <AlertCircle className="w-3 h-3 shrink-0" />}
+                        <span className="truncate" title={formatTimestamp(t.expired_time)}>过期：{formatTimestamp(t.expired_time)}</span>
                       </div>
                     )}
                   </div>
@@ -323,7 +334,7 @@ export function Tokens() {
             </div>
 
             {/* Desktop table */}
-            <div className="hidden md:block rounded-md border-t border-b sm:border-0">
+            <div className="hidden md:block rounded-md border-t border-b sm:border-0 overflow-x-auto">
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow>
@@ -344,14 +355,14 @@ export function Tokens() {
                   {tokens.map((t) => (
                     <TableRow key={t.id} className="hover:bg-muted/50">
                       <TableCell className="font-mono text-xs text-muted-foreground">{t.id}</TableCell>
-                      <TableCell>
-                        <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{t.key}</code>
+                      <TableCell className="max-w-[180px]">
+                        <code className="block truncate text-xs font-mono bg-muted px-1.5 py-0.5 rounded" title={t.key}>{t.key}</code>
                       </TableCell>
                       <TableCell className="font-medium text-sm max-w-[150px] truncate" title={t.name}>{t.name || '-'}</TableCell>
                       <TableCell>
                         {t.user_id > 0 ? (
                           <div
-                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all cursor-pointer border border-transparent hover:border-primary/20 w-fit"
+                            className="flex max-w-[160px] items-center gap-2 px-2 py-1 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all cursor-pointer border border-transparent hover:border-primary/20 w-fit"
                             onClick={() => {
                               setSelectedUser({ id: t.user_id, username: t.username || `用户 #${t.user_id}` })
                               setAnalysisDialogOpen(true)
@@ -361,7 +372,7 @@ export function Tokens() {
                             <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-[10px] text-primary font-bold">
                               {(t.username || '#')[0]?.toUpperCase()}
                             </div>
-                            <span className="font-medium text-sm whitespace-nowrap">
+                            <span className="min-w-0 truncate font-medium text-sm">
                               {t.username || `#${t.user_id}`}
                             </span>
                           </div>
@@ -373,12 +384,12 @@ export function Tokens() {
                       <TableCell>
                         {t.group ? (
                           <span
-                            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary cursor-pointer hover:bg-primary/20 transition-colors"
+                            className="inline-flex max-w-[120px] items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary cursor-pointer hover:bg-primary/20 transition-colors"
                             onClick={() => setGroupFilter(t.group)}
                             title={`筛选分组: ${t.group}`}
                           >
                             <Tag className="w-3 h-3" />
-                            {t.group}
+                            <span className="truncate">{t.group}</span>
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">default</span>
@@ -427,13 +438,13 @@ export function Tokens() {
 
           {/* Pagination */}
           {total > 0 && (
-            <div className="px-4 py-4 border-t flex items-center justify-between">
+            <div className="px-3 sm:px-4 py-4 border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-muted-foreground">
                 显示 {tokens.length} 条，共 {total} 条
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex">
                 <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>上一页</Button>
-                <div className="flex items-center px-2 text-sm font-medium">
+                <div className="flex items-center justify-center px-2 text-sm font-medium whitespace-nowrap">
                   {page} / {totalPages}
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>下一页</Button>

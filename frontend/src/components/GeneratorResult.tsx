@@ -61,11 +61,11 @@ export function GeneratorResult({ result, onReset }: GeneratorResultProps) {
   const hasMoreKeys = result.keys.length > 10
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-5 sm:space-y-6">
       {/* 成功提示 */}
-      <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4 flex items-start">
+      <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-3 sm:p-4 flex items-start">
         <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 mr-3 flex-shrink-0" />
-        <div>
+        <div className="min-w-0">
           <h3 className="text-sm font-medium text-green-800 dark:text-green-200">添加成功</h3>
           <p className="mt-1 text-sm text-green-700 dark:text-green-300">
             成功添加 {result.count} 个兑换码到数据库
@@ -74,10 +74,10 @@ export function GeneratorResult({ result, onReset }: GeneratorResultProps) {
       </div>
 
       {/* 兑换码列表 */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
+      <div className="min-w-0">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
           <label className="block text-sm font-medium">兑换码列表 ({result.count} 个)</label>
-          <div className="flex space-x-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
             <button onClick={copyKeys} className="text-sm text-primary hover:text-primary/80 flex items-center">
               <Copy className="w-4 h-4 mr-1" />
               复制全部
@@ -88,14 +88,14 @@ export function GeneratorResult({ result, onReset }: GeneratorResultProps) {
             </button>
           </div>
         </div>
-        <div className="bg-muted border rounded-lg p-4 max-h-64 overflow-y-auto">
+        <div className="bg-muted border rounded-lg p-2.5 sm:p-4 max-h-64 overflow-y-auto">
           <div className="space-y-1">
             {displayedKeys.map((key, index) => (
-              <div key={index} className="flex items-center justify-between py-1 px-2 hover:bg-background rounded group">
-                <code className="text-sm font-mono">{key}</code>
+              <div key={index} className="flex min-w-0 items-center justify-between gap-2 py-1 px-2 hover:bg-background rounded group">
+                <code className="min-w-0 flex-1 truncate text-xs sm:text-sm font-mono" title={key}>{key}</code>
                 <button
                   onClick={() => copyToClipboard(key, '兑换码')}
-                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity"
+                  className="shrink-0 text-muted-foreground hover:text-foreground transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                   title="复制"
                 >
                   <Copy className="w-4 h-4" />
@@ -118,7 +118,7 @@ export function GeneratorResult({ result, onReset }: GeneratorResultProps) {
 
       {/* 操作按钮 */}
       <div className="flex justify-end pt-4 border-t">
-        <Button variant="secondary" onClick={onReset}>继续添加</Button>
+        <Button variant="secondary" onClick={onReset} className="w-full sm:w-auto">继续添加</Button>
       </div>
     </div>
   )

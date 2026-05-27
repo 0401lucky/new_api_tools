@@ -167,9 +167,9 @@ export function TopUpAudit({ active }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="w-32">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+        <div className="contents sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+          <div className="min-w-0">
             <Select value={days.toString()} onChange={e => setDays(parseInt(e.target.value))}>
               <option value="7">近 7 天</option>
               <option value="30">近 30 天</option>
@@ -177,7 +177,7 @@ export function TopUpAudit({ active }: Props) {
               <option value="365">近 1 年</option>
             </Select>
           </div>
-          <div className="w-36">
+          <div className="min-w-0">
             <Select value={pendingHours.toString()} onChange={e => setPendingHours(parseInt(e.target.value))}>
               <option value="1">超时 1 小时</option>
               <option value="2">超时 2 小时</option>
@@ -186,7 +186,7 @@ export function TopUpAudit({ active }: Props) {
             </Select>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={() => fetchAll(true)} disabled={refreshing} className="h-9">
+        <Button variant="outline" size="sm" onClick={() => fetchAll(true)} disabled={refreshing} className="col-span-2 h-9 min-w-0 sm:col-span-1 sm:w-auto">
           <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
           刷新审计
         </Button>
@@ -225,15 +225,15 @@ function AuditMetric({
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <div className="text-xs text-muted-foreground">{title}</div>
-            <div className="mt-2 text-2xl font-bold tabular-nums">{fmtNum(value)}</div>
+            <div className="mt-2 break-words text-2xl font-bold tabular-nums">{fmtNum(value)}</div>
           </div>
-          <div className={`rounded-full p-2 ${toneClass}`}>
+          <div className={`shrink-0 rounded-full p-2 ${toneClass}`}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
-        <div className="mt-2 text-xs text-muted-foreground">{detail}</div>
+        <div className="mt-2 break-words text-xs text-muted-foreground">{detail}</div>
       </CardContent>
     </Card>
   )
@@ -250,6 +250,46 @@ function ProviderHealthTable({ data }: { data: ProviderHealth[] }) {
         <CardDescription>按支付渠道和方式统计成功率、失败率、过期率与完成耗时</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
+        <div className="divide-y md:hidden">
+          {data.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">暂无数据</div>
+          ) : data.map(row => (
+            <div key={`${row.provider}-${row.method}`} className="space-y-3 p-4">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{row.provider || '未知渠道'}</div>
+                  <Badge variant="outline" className="mt-1 max-w-full font-normal">
+                    <span className="min-w-0 truncate">{row.method || '未知方式'}</span>
+                  </Badge>
+                </div>
+                <Badge variant={row.success_rate >= 90 ? 'success' : row.success_rate >= 70 ? 'warning' : 'destructive'} className="shrink-0 justify-center">
+                  {fmtPct(row.success_rate)}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 rounded-md bg-muted/30 p-3 text-sm">
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">订单</div>
+                  <div className="font-medium tabular-nums">{fmtNum(row.total_count)}</div>
+                </div>
+                <div className="min-w-0 text-right">
+                  <div className="text-xs text-muted-foreground">收入</div>
+                  <div className="break-words font-mono font-medium">{fmtMoney(row.revenue)}</div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">失败 / 过期</div>
+                  <div className="text-xs text-muted-foreground">{fmtPct(row.failure_rate)} / {fmtPct(row.expired_rate)}</div>
+                </div>
+                <div className="min-w-0 text-right">
+                  <div className="text-xs text-muted-foreground">平均 / P95</div>
+                  <div className="text-xs text-muted-foreground">{formatDuration(row.avg_completion_secs)} / {formatDuration(row.p95_completion_secs)}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block">
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow>
@@ -288,6 +328,7 @@ function ProviderHealthTable({ data }: { data: ProviderHealth[] }) {
             ))}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   )
@@ -304,6 +345,55 @@ function AnomalyTable({ data }: { data: AnomalyRecord[] }) {
         <CardDescription>展示最近范围内需要人工核对的充值订单</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
+        <div className="divide-y md:hidden">
+          {data.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">暂无异常订单</div>
+          ) : data.map(row => (
+            <div key={row.id} className="space-y-3 p-4">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{row.username || '未知用户'}</div>
+                  <div className="text-xs text-muted-foreground">用户 ID {row.user_id} · 订单 #{row.id}</div>
+                </div>
+                <Badge variant={statusVariant(row.status_bucket)} className="shrink-0">
+                  {statusLabel(row.status_bucket)}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 rounded-md bg-muted/30 p-3 text-sm">
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">支付渠道</div>
+                  <div className="truncate font-medium">{row.payment_provider || '未知'}</div>
+                  <div className="truncate text-xs text-muted-foreground">{row.payment_method || '未知'}</div>
+                </div>
+                <div className="min-w-0 text-right">
+                  <div className="text-xs text-muted-foreground">金额</div>
+                  <div className="break-words font-mono font-medium">{fmtMoney(row.money)}</div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">已创建</div>
+                  <div className="text-xs text-muted-foreground">{row.age_hours.toFixed(1)} 小时</div>
+                </div>
+                <div className="min-w-0 text-right">
+                  <div className="text-xs text-muted-foreground">创建时间</div>
+                  <div className="text-xs text-muted-foreground">{fmtTime(row.create_time)}</div>
+                </div>
+              </div>
+
+              {(row.anomaly_reasons || []).length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {(row.anomaly_reasons || []).map(reason => (
+                    <Badge key={reason} variant="outline" className="max-w-full font-normal">
+                      <span className="min-w-0 truncate">{reason}</span>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block">
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow>
@@ -350,6 +440,7 @@ function AnomalyTable({ data }: { data: AnomalyRecord[] }) {
             ))}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   )

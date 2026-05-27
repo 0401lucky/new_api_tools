@@ -137,12 +137,12 @@ export function Layout({ children, activeTab, onTabChange, onLogout }: LayoutPro
   }, [activeTab])
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-background flex flex-col">
       {/* Sticky Header Wrapper */}
       <div className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/40 shadow-sm dark:shadow-none transition-colors duration-300">
         <header className="w-full">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-3">
+          <div className="max-w-7xl mx-auto px-3 xs:px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-2.5 sm:py-3">
               <div className="flex items-center gap-3 min-w-0">
                 <Button
                   variant="ghost"
@@ -154,7 +154,7 @@ export function Layout({ children, activeTab, onTabChange, onLogout }: LayoutPro
                   <Menu className="h-5 w-5" />
                 </Button>
                 <div className="flex items-center gap-2 min-w-0">
-                  <img src="/tool.svg" alt="NewAPI-Tool" className="h-8 w-8 shrink-0" />
+                  <img src="/tool.svg" alt="NewAPI-Tool" className="h-7 w-7 shrink-0 sm:h-8 sm:w-8" />
                   <h1 className="text-lg sm:text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70 truncate">
                     <span className="md:hidden">{activeTabLabel || 'NewAPI-Tool'}</span>
                     <span className="hidden md:inline">NewAPI-Tool</span>
@@ -184,7 +184,7 @@ export function Layout({ children, activeTab, onTabChange, onLogout }: LayoutPro
                     window.dispatchEvent(new CustomEvent('abuse-broadcast-open-inbox'))
                     onTabChange('abuse-broadcast')
                   }}
-                  className="relative text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  className="relative h-9 w-9 px-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors sm:w-auto sm:px-3"
                   title="联合广播收件箱"
                 >
                   <Bell className="h-4 w-4" />
@@ -194,7 +194,7 @@ export function Layout({ children, activeTab, onTabChange, onLogout }: LayoutPro
                     </span>
                   )}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={onLogout} className="text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
+                <Button variant="ghost" size="sm" onClick={onLogout} className="h-9 w-9 px-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors sm:w-auto sm:px-3">
                   <LogOut className="h-4 w-4 sm:mr-2" />
                   <span className="hidden sm:inline">退出</span>
                 </Button>
@@ -245,7 +245,7 @@ export function Layout({ children, activeTab, onTabChange, onLogout }: LayoutPro
             className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in-up"
             onClick={() => setMobileNavOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 w-[78%] max-w-xs bg-background border-r border-border shadow-2xl flex flex-col">
+          <aside className="absolute inset-y-0 left-0 w-[min(20rem,calc(100vw-3rem))] bg-background border-r border-border shadow-2xl flex flex-col">
             <div className="flex items-center justify-between px-4 h-14 border-b border-border/60">
               <div className="flex items-center gap-2">
                 <img src="/tool.svg" alt="" className="h-6 w-6" />
@@ -269,11 +269,16 @@ export function Layout({ children, activeTab, onTabChange, onLogout }: LayoutPro
                 >
                   <Icon className={cn("h-5 w-5 shrink-0", activeTab === id ? "text-primary" : "")} />
                   <span className="truncate">{label}</span>
+                  {id === 'abuse-broadcast' && unreadBroadcasts > 0 && (
+                    <span className="ml-auto min-w-5 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                      {unreadBroadcasts > 99 ? '99+' : unreadBroadcasts}
+                    </span>
+                  )}
                 </button>
               ))}
             </nav>
             {dbStatus && (
-              <div className="px-4 py-3 border-t border-border/60 text-xs text-muted-foreground">
+              <div className="px-4 py-3 border-t border-border/60 text-xs text-muted-foreground safe-pb">
                 <div className="flex items-center gap-2">
                   <span className={cn("inline-block h-2 w-2 rounded-full", dbStatus.connected ? "bg-emerald-500" : "bg-red-500")} />
                   {dbStatus.connected ? `${dbStatus.engine.toUpperCase()} · 已连接` : '数据库离线'}
@@ -285,7 +290,7 @@ export function Layout({ children, activeTab, onTabChange, onLogout }: LayoutPro
       )}
 
       {/* Main Content with Fade In */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in-up">
+      <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto px-3 xs:px-4 sm:px-6 lg:px-8 py-4 sm:py-8 animate-fade-in-up">
         {children}
       </main>
     </div>

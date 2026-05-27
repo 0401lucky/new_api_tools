@@ -97,8 +97,8 @@ export function TrendChart({ data, period, loading, totalRequests }: TrendChartP
 
   if (loading) {
     return (
-      <Card className="col-span-1 shadow-sm h-[350px] flex items-center justify-center">
-        <div className="animate-pulse flex flex-col items-center">
+      <Card className="col-span-1 min-w-0 shadow-sm h-[280px] sm:h-[350px] flex items-center justify-center">
+        <div className="animate-pulse flex w-full max-w-[220px] flex-col items-center px-4">
           <div className="h-4 w-32 bg-muted rounded mb-4"></div>
           <div className="h-40 w-full bg-muted/20 rounded-lg"></div>
         </div>
@@ -107,18 +107,18 @@ export function TrendChart({ data, period, loading, totalRequests }: TrendChartP
   }
 
   return (
-    <Card className="glass-card shadow-sm hover:shadow-lg transition-all duration-300 border-border/50 flex flex-col h-full relative overflow-hidden">
+    <Card className="glass-card min-w-0 shadow-sm hover:shadow-lg transition-all duration-300 border-border/50 flex flex-col h-full relative overflow-hidden">
       <div className="absolute -left-20 -top-20 w-64 h-64 rounded-full opacity-10 bg-primary blur-3xl pointer-events-none" />
-      <CardHeader className="pb-0 shrink-0 relative z-10">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                <TrendingUp className="w-5 h-5" />
+      <CardHeader className="p-4 pb-0 sm:p-6 sm:pb-0 shrink-0 relative z-10">
+        <div className="flex min-w-0 items-start justify-between gap-3 sm:items-center">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base sm:text-lg flex min-w-0 items-center gap-2">
+              <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg text-primary">
+                <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
-              {isHourlyMode ? '每小时请求趋势' : '每日请求趋势'}
+              <span className="truncate">{isHourlyMode ? '每小时请求趋势' : '每日请求趋势'}</span>
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-xs sm:text-sm">
               {period === '24h' ? '24小时' : period === '3d' ? '近3天' : period === '7d' ? '近7天' : '近14天'}数据概览
             </CardDescription>
           </div>
@@ -130,21 +130,21 @@ export function TrendChart({ data, period, loading, totalRequests }: TrendChartP
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col justify-end pb-16 min-h-[350px]">
+      <CardContent className="flex-1 flex flex-col justify-end px-3 pb-12 sm:px-6 sm:pb-16 min-h-[285px] sm:min-h-[350px]">
         {processedData.length > 0 ? (
-          <div className="relative h-[240px] w-full select-none pl-8 border-b border-border/50 shrink-0">
+          <div className="relative h-[210px] sm:h-[240px] w-full select-none pl-7 sm:pl-8 border-b border-border/50 shrink-0">
             {/* Background Grid */}
             <div className="absolute inset-0 flex flex-col justify-between text-xs text-muted-foreground/30 pointer-events-none">
               {gridLines.reverse().map((val, i) => (
                 <div key={i} className="flex items-center w-full relative">
-                  <span className="absolute -left-8 w-7 text-right text-[10px]">{val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}</span>
+                  <span className="absolute -left-7 sm:-left-8 w-6 sm:w-7 text-right text-[9px] sm:text-[10px]">{val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}</span>
                   <div className="w-full h-[1px] bg-border/40 border-dashed border-t border-muted-foreground/20"></div>
                 </div>
               ))}
             </div>
 
             {/* Chart Area */}
-            <div className="absolute inset-0 ml-0 flex items-end justify-between gap-1.5 sm:gap-2 pl-2 z-10">
+            <div className="absolute inset-0 ml-0 flex min-w-0 items-end justify-between gap-1 sm:gap-2 pl-1.5 sm:pl-2 z-10">
               {processedData.map((item, index) => {
                 const total = processedData.length;
                 // Label visibility: show fewer labels when there are many bars
@@ -197,7 +197,7 @@ export function TrendChart({ data, period, loading, totalRequests }: TrendChartP
 
                     {/* X-Axis Label */}
                     <div className={cn(
-                      "absolute top-full mt-2 left-1/2 text-[9px] text-muted-foreground font-medium transition-all duration-200 -translate-x-1/2 whitespace-nowrap",
+                      "absolute top-full mt-2 left-1/2 text-[8px] sm:text-[9px] text-muted-foreground font-medium transition-all duration-200 -translate-x-1/2 whitespace-nowrap",
                       showLabel ? "opacity-70" : "opacity-0"
                     )}>
                       {item.displayDate}
@@ -208,7 +208,7 @@ export function TrendChart({ data, period, loading, totalRequests }: TrendChartP
             </div>
           </div>
         ) : (
-          <div className="h-[250px] flex flex-col items-center justify-center text-muted-foreground bg-muted/5 rounded-xl border border-dashed border-muted">
+          <div className="h-[220px] sm:h-[250px] flex flex-col items-center justify-center text-muted-foreground bg-muted/5 rounded-xl border border-dashed border-muted">
             <BarChart3 className="w-10 h-10 mb-2 opacity-20" />
             <p className="text-sm">暂无趋势数据</p>
           </div>
@@ -276,7 +276,7 @@ function FloatingBarTooltip({ item, isHourlyMode, anchorTop, anchorLeft }: Float
         pointerEvents: 'none',
         zIndex: 50,
       }}
-      className="bg-popover text-popover-foreground text-xs rounded-lg shadow-xl border border-border/60 p-3 min-w-[180px] whitespace-nowrap"
+      className="max-w-[calc(100vw-1rem)] bg-popover text-popover-foreground text-xs rounded-lg shadow-xl border border-border/60 p-3 min-w-[170px] sm:min-w-[180px] whitespace-nowrap"
     >
       <div className="font-semibold mb-1 flex items-center gap-2 border-b border-border/50 pb-1.5">
         <Calendar className="w-3 h-3 text-muted-foreground shrink-0" />

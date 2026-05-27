@@ -37,29 +37,29 @@ export function RedemptionCenter() {
   }, [view])
 
   return (
-    <Tabs value={view} onValueChange={(value) => setView(value as View)} className="space-y-4">
-      <TabsList className="grid w-full grid-cols-3 md:w-auto md:inline-flex">
-        <TabsTrigger value="manage" className="gap-2">
-          <Ticket className="h-4 w-4" />
-          兑换码
+    <Tabs value={view} onValueChange={(value) => setView(value as View)} className="min-w-0 space-y-4">
+      <TabsList className="grid h-auto w-full min-w-0 grid-cols-3 md:w-auto md:inline-flex">
+        <TabsTrigger value="manage" className="min-w-0 gap-1.5 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+          <Ticket className="h-4 w-4 shrink-0" />
+          <span className="truncate">兑换码</span>
         </TabsTrigger>
-        <TabsTrigger value="generator" className="gap-2">
-          <Plus className="h-4 w-4" />
-          生成器
+        <TabsTrigger value="generator" className="min-w-0 gap-1.5 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+          <Plus className="h-4 w-4 shrink-0" />
+          <span className="truncate">生成器</span>
         </TabsTrigger>
-        <TabsTrigger value="history" className="gap-2">
-          <Clock className="h-4 w-4" />
-          生成记录
+        <TabsTrigger value="history" className="min-w-0 gap-1.5 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+          <Clock className="h-4 w-4 shrink-0" />
+          <span className="truncate">生成记录</span>
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="manage" className="mt-0">
+      <TabsContent value="manage" className="mt-0 min-w-0">
         <Redemptions />
       </TabsContent>
-      <TabsContent value="generator" className="mt-0">
+      <TabsContent value="generator" className="mt-0 min-w-0">
         <Generator />
       </TabsContent>
-      <TabsContent value="history" className="mt-0">
+      <TabsContent value="history" className="mt-0 min-w-0">
         <History />
       </TabsContent>
     </Tabs>

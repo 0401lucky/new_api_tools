@@ -231,42 +231,59 @@ export function TopUps() {
   const formatTimestamp = (ts: number) => ts ? new Date(ts * 1000).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'
   const formatAmount = (amount: number) => amount.toFixed(2)
   const formatMoney = (money: number) => `¥${money.toFixed(2)}`
+  const copyTradeNo = useCallback(async (tradeNo: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(tradeNo)
+      } else {
+        const textArea = document.createElement('textarea')
+        textArea.value = tradeNo
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-9999px'
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      showToast('success', '已复制')
+    } catch { showToast('error', '复制失败') }
+  }, [showToast])
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">充值记录</h2>
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">充值记录</h2>
           <p className="text-muted-foreground mt-1">查看所有用户的充值历史与状态</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || loading} className="h-9">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-3">
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || loading} className="h-9 min-w-0">
             <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
             刷新
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting} className="h-9" title="按当前筛选导出 CSV">
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting} className="h-9 min-w-0" title="按当前筛选导出 CSV">
             {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-            {exporting ? '导出中...' : '导出 CSV'}
+            <span className="truncate">{exporting ? '导出中...' : '导出 CSV'}</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={() => window.open('https://credit.linux.do/home', '_blank')} className="h-9">
+          <Button variant="outline" size="sm" onClick={() => window.open('https://credit.linux.do/home', '_blank')} className="col-span-2 h-9 min-w-0 sm:col-span-1">
             <ExternalLink className="h-4 w-4 mr-2" />
-            LINUX DO Credit
+            <span className="truncate">LINUX DO Credit</span>
           </Button>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'records' | 'analytics' | 'audit')} className="w-full">
         <TabsList className="grid w-full max-w-xl grid-cols-3">
-          <TabsTrigger value="records" className="gap-2">
+          <TabsTrigger value="records" className="min-w-0 gap-1 sm:gap-2">
             <ListOrdered className="h-4 w-4" />
             记录
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-2">
+          <TabsTrigger value="analytics" className="min-w-0 gap-1 sm:gap-2">
             <BarChart3 className="h-4 w-4" />
             分析
           </TabsTrigger>
-          <TabsTrigger value="audit" className="gap-2">
+          <TabsTrigger value="audit" className="min-w-0 gap-1 sm:gap-2">
             <ShieldCheck className="h-4 w-4" />
             审计
           </TabsTrigger>
@@ -317,7 +334,7 @@ export function TopUps() {
 
           {/* Total Stats Summary —— 仅统计成功充值（不含待处理 / 失败） */}
           <Card className="bg-muted/30 border-dashed">
-            <CardContent className="p-4 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+            <CardContent className="grid grid-cols-1 gap-2 p-4 text-sm sm:flex sm:flex-wrap sm:gap-x-8 sm:gap-y-2">
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground">成功充值:</span>
                 <span className="font-semibold">{statsLoading ? '-' : statistics?.success_count || 0} 笔</span>
@@ -350,8 +367,8 @@ export function TopUps() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
-                <div className="space-y-1">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-7">
+                <div className="min-w-0 space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">状态</label>
                   <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
                     <option value="">全部状态</option>
@@ -362,7 +379,7 @@ export function TopUps() {
                     <option value="unknown">未知</option>
                   </Select>
                 </div>
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">支付渠道</label>
                   <Select value={paymentProviderFilter} onChange={(e) => setPaymentProviderFilter(e.target.value)}>
                     <option value="">全部渠道</option>
@@ -371,7 +388,7 @@ export function TopUps() {
                     ))}
                   </Select>
                 </div>
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">支付方式</label>
                   <Select value={paymentMethodFilter} onChange={(e) => setPaymentMethodFilter(e.target.value)}>
                     <option value="">全部方式</option>
@@ -380,7 +397,7 @@ export function TopUps() {
                     ))}
                   </Select>
                 </div>
-                <div className="space-y-1 lg:col-span-2">
+                <div className="min-w-0 space-y-1 lg:col-span-2">
                   <label className="text-xs font-medium text-muted-foreground">交易号搜索</label>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -389,27 +406,27 @@ export function TopUps() {
                       value={tradeNoSearch}
                       onChange={(e) => setTradeNoSearch(e.target.value)}
                       placeholder="输入交易号..."
-                      className="pl-9"
+                      className="min-w-0 pl-9"
                     />
                   </div>
                 </div>
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">开始日期</label>
                   <div className="relative">
                     <Calendar className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="pl-9" />
+                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="min-w-0 pl-9" />
                   </div>
                 </div>
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">结束日期</label>
                   <div className="relative">
                     <Calendar className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="pl-9" />
+                    <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="min-w-0 pl-9" />
                   </div>
                 </div>
               </div>
-              <div className="mt-4 flex justify-end">
-                <Button variant="ghost" size="sm" onClick={() => { setStatusFilter(''); setPaymentMethodFilter(''); setPaymentProviderFilter(''); setTradeNoSearch(''); setStartDate(''); setEndDate('') }} className="text-muted-foreground hover:text-foreground">
+              <div className="mt-4 flex justify-stretch sm:justify-end">
+                <Button variant="ghost" size="sm" onClick={() => { setStatusFilter(''); setPaymentMethodFilter(''); setPaymentProviderFilter(''); setTradeNoSearch(''); setStartDate(''); setEndDate('') }} className="w-full text-muted-foreground hover:text-foreground sm:w-auto">
                   重置筛选
                 </Button>
               </div>
@@ -434,7 +451,90 @@ export function TopUps() {
                   </p>
                 </div>
               ) : (
-                <div className="rounded-md border-t border-b sm:border-0">
+                <>
+                <div className="divide-y md:hidden">
+                  {records.map((record) => (
+                    <div key={record.id} className="space-y-3 p-4">
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{record.username || '未知用户'}</div>
+                          <div className="text-xs text-muted-foreground">用户 ID {record.user_id} · 订单 #{record.id}</div>
+                        </div>
+                        <Badge variant={getStatusVariant(record.status_bucket || record.status)} className="shrink-0">
+                          {getStatusLabel(record.status_bucket || record.status)}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 rounded-md bg-muted/30 p-3 text-sm">
+                        <div className="min-w-0">
+                          <div className="text-xs text-muted-foreground">入账额度</div>
+                          <div className="font-semibold text-green-600">{formatAmount(record.amount)} USD</div>
+                        </div>
+                        <div className="min-w-0 text-right">
+                          <div className="text-xs text-muted-foreground">实收金额</div>
+                          <div className="font-semibold">{formatMoney(record.money)}</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                          <span className="shrink-0 text-muted-foreground">支付渠道</span>
+                          <div className="min-w-0 text-right">
+                            <Badge variant="outline" className="max-w-full font-normal">
+                              <span className="truncate">{record.payment_provider || '未知'}</span>
+                            </Badge>
+                            <div className="mt-1 truncate text-xs text-muted-foreground">{record.payment_method || '未知方式'}</div>
+                          </div>
+                        </div>
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="shrink-0 text-muted-foreground">交易号</span>
+                          <div className="flex min-w-0 flex-1 items-start justify-end gap-1">
+                            <span className="min-w-0 break-all text-right font-mono text-xs text-muted-foreground" title={record.trade_no}>
+                              {record.trade_no || '-'}
+                            </span>
+                            {record.trade_no && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 shrink-0"
+                                onClick={() => copyTradeNo(record.trade_no)}
+                                aria-label="复制交易号"
+                                title="复制交易号"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {record.anomaly_reasons && record.anomaly_reasons.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {record.anomaly_reasons.map(reason => (
+                            <Badge key={reason} variant="outline" className="max-w-full font-normal">
+                              <span className="truncate">{reason}</span>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-1 border-t pt-3 text-xs text-muted-foreground">
+                        <div className="flex justify-between gap-3">
+                          <span>创建</span>
+                          <span className="text-right">{formatTimestamp(record.create_time)}</span>
+                        </div>
+                        {record.complete_time > 0 && (
+                          <div className="flex justify-between gap-3">
+                            <span>完成</span>
+                            <span className="text-right">{formatTimestamp(record.complete_time)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden rounded-md border-t border-b md:block sm:border-0">
                   <Table>
                     <TableHeader className="bg-muted/50">
                       <TableRow>
@@ -471,23 +571,7 @@ export function TopUps() {
                                   variant="ghost"
                                   size="icon"
                                   className="h-6 w-6 ml-1 flex-shrink-0"
-                                  onClick={async () => {
-                                    try {
-                                      if (navigator.clipboard && window.isSecureContext) {
-                                        await navigator.clipboard.writeText(record.trade_no)
-                                      } else {
-                                        const textArea = document.createElement('textarea')
-                                        textArea.value = record.trade_no
-                                        textArea.style.position = 'fixed'
-                                        textArea.style.left = '-9999px'
-                                        document.body.appendChild(textArea)
-                                        textArea.select()
-                                        document.execCommand('copy')
-                                        document.body.removeChild(textArea)
-                                      }
-                                      showToast('success', '已复制')
-                                    } catch { showToast('error', '复制失败') }
-                                  }}
+                                  onClick={() => copyTradeNo(record.trade_no)}
                                 >
                                   <Copy className="h-3 w-3" />
                                 </Button>
@@ -528,22 +612,23 @@ export function TopUps() {
                     </TableBody>
                   </Table>
                 </div>
+                </>
               )}
 
               {/* Pagination */}
               {records.length > 0 && (
-                <div className="px-4 py-4 border-t flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
+                <div className="flex flex-col gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-center text-sm text-muted-foreground sm:text-left">
                     显示 {records.length} 条，共 {total} 条
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                  <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2 sm:w-auto">
+                    <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="min-w-0">
                       上一页
                     </Button>
-                    <div className="flex items-center px-2 text-sm font-medium">
+                    <div className="flex items-center justify-center px-2 text-sm font-medium whitespace-nowrap">
                       {page} / {totalPages}
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                    <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="min-w-0">
                       下一页
                     </Button>
                   </div>

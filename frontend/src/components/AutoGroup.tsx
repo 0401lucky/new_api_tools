@@ -350,20 +350,20 @@ export function AutoGroup() {
     const info = SOURCE_LABELS[source] || { label: source, icon: Users }
     const Icon = info.icon
     return (
-      <Badge variant="outline" className="gap-1">
-        <Icon className="h-3 w-3" />
-        {info.label}
+      <Badge variant="outline" className="max-w-full gap-1">
+        <Icon className="h-3 w-3 shrink-0" />
+        <span className="truncate">{info.label}</span>
       </Badge>
     )
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="min-w-0 space-y-4 sm:space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">自动分组</h2>
-          <p className="text-muted-foreground mt-1">
+      <div className="flex min-w-0 flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">自动分组</h2>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">
             将 default 组的新用户自动分配到目标用户组
           </p>
         </div>
@@ -376,6 +376,7 @@ export function AutoGroup() {
             fetchStats()
           }}
           disabled={configLoading}
+          className="w-full sm:w-auto"
         >
           <RefreshCw className={cn('h-4 w-4 mr-2', configLoading && 'animate-spin')} />
           刷新
@@ -383,36 +384,40 @@ export function AutoGroup() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
         <StatCard
           title="待分配用户"
           value={stats?.pending_count ?? 0}
           icon={Users}
           color="blue"
+          variant="compact"
         />
         <StatCard
           title="累计已分配"
           value={stats?.total_assigned ?? 0}
           icon={UserPlus}
           color="green"
+          variant="compact"
         />
         <StatCard
           title="上次扫描"
           value={stats?.last_scan_time ? formatTime(stats.last_scan_time) : '-'}
           icon={Clock}
           color="purple"
+          variant="compact"
         />
         <StatCard
           title="功能状态"
           value={stats?.enabled ? '已启用' : '未启用'}
           icon={Settings}
           color={stats?.enabled ? 'green' : 'gray'}
+          variant="compact"
           className={stats?.enabled ? 'border-green-500/20' : ''}
         />
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b">
+      <div className="grid min-w-0 grid-cols-3 gap-1 border-b sm:flex sm:gap-2">
         {[
           { id: 'config', label: '配置设置', icon: Settings },
           { id: 'preview', label: '待分配预览', icon: Users },
@@ -422,25 +427,25 @@ export function AutoGroup() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
             className={cn(
-              'flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+              'min-w-0 flex items-center justify-center gap-1.5 px-2 py-2 text-xs sm:gap-2 sm:px-4 sm:text-sm font-medium border-b-2 -mb-px transition-colors',
               activeTab === tab.id
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             )}
           >
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
+            <tab.icon className="h-4 w-4 shrink-0" />
+            <span className="truncate">{tab.label}</span>
           </button>
         ))}
       </div>
 
       {/* Config Tab */}
       {activeTab === 'config' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>配置设置</CardTitle>
+        <Card className="min-w-0">
+          <CardHeader className="p-4 pb-3 sm:p-6 sm:pb-4">
+            <CardTitle className="text-lg sm:text-2xl">配置设置</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-5 px-4 pb-4 sm:space-y-6 sm:px-6 sm:pb-6">
             {configLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -448,8 +453,8 @@ export function AutoGroup() {
             ) : config ? (
               <>
                 {/* Enable/Disable */}
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
                     <h4 className="font-medium">启用自动分组</h4>
                     <p className="text-sm text-muted-foreground">
                       启用后将根据配置自动分配新用户
@@ -459,13 +464,14 @@ export function AutoGroup() {
                     variant={config.enabled ? 'default' : 'outline'}
                     onClick={() => saveConfig({ enabled: !config.enabled })}
                     disabled={saving}
+                    className="w-full sm:w-auto"
                   >
                     {config.enabled ? '已启用' : '未启用'}
                   </Button>
                 </div>
 
                 {/* Mode Selection */}
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <h4 className="font-medium">分组模式</h4>
                   <Select
                     value={config.mode}
@@ -479,7 +485,7 @@ export function AutoGroup() {
 
                 {/* Simple Mode: Target Group */}
                 {config.mode === 'simple' && (
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <h4 className="font-medium">目标分组</h4>
                     <Select
                       value={config.target_group}
@@ -503,16 +509,16 @@ export function AutoGroup() {
 
                 {/* By Source Mode: Source Rules */}
                 {config.mode === 'by_source' && (
-                  <div className="space-y-4">
+                  <div className="min-w-0 space-y-4">
                     <h4 className="font-medium">按来源分组规则</h4>
                     <p className="text-sm text-muted-foreground">
                       为每种注册来源配置目标分组，留空表示不处理该来源的用户
                     </p>
-                    <div className="grid gap-3">
+                    <div className="grid min-w-0 gap-3">
                       {Object.entries(SOURCE_LABELS).map(([source, info]) => (
-                        <div key={source} className="flex items-center gap-4">
-                          <div className="w-32 flex items-center gap-2">
-                            <info.icon className="h-4 w-4" />
+                        <div key={source} className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                          <div className="flex w-full items-center gap-2 sm:w-32">
+                            <info.icon className="h-4 w-4 shrink-0" />
                             <span className="text-sm">{info.label}</span>
                           </div>
                           <Select
@@ -526,7 +532,7 @@ export function AutoGroup() {
                               })
                             }
                             disabled={saving}
-                            className="flex-1"
+                            className="w-full sm:flex-1"
                           >
                             <option value="">-- 不处理 --</option>
                             {groups
@@ -545,8 +551,8 @@ export function AutoGroup() {
 
                 {/* Auto Scan */}
                 <div className="space-y-4 pt-4 border-t">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
                       <h4 className="font-medium">自动扫描</h4>
                       <p className="text-sm text-muted-foreground">
                         启用后将定时自动执行分组分配
@@ -556,6 +562,7 @@ export function AutoGroup() {
                       variant={config.auto_scan_enabled ? 'default' : 'outline'}
                       onClick={() => saveConfig({ auto_scan_enabled: !config.auto_scan_enabled })}
                       disabled={saving}
+                      className="w-full sm:w-auto"
                     >
                       {config.auto_scan_enabled ? '已启用' : '未启用'}
                     </Button>
@@ -579,14 +586,14 @@ export function AutoGroup() {
                           saveConfig({ scan_interval_minutes: parseInt(localScanInterval) || 60 })
                         }}
                         disabled={saving}
-                        className="w-32"
+                        className="w-full sm:w-32"
                       />
                     </div>
                   )}
                 </div>
 
                 {/* Whitelist */}
-                <div className="space-y-2 pt-4 border-t">
+                <div className="min-w-0 space-y-2 pt-4 border-t">
                   <h4 className="font-medium">白名单用户ID</h4>
                   <p className="text-sm text-muted-foreground">
                     白名单中的用户不会被自动分组，多个ID用逗号分隔
@@ -624,15 +631,16 @@ export function AutoGroup() {
 
       {/* Preview Tab */}
       {activeTab === 'preview' && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>待分配用户预览</CardTitle>
-            <div className="flex gap-2">
+        <Card className="min-w-0">
+          <CardHeader className="flex flex-col gap-3 p-4 pb-3 sm:flex-row sm:items-center sm:justify-between sm:p-6 sm:pb-4">
+            <CardTitle className="text-lg sm:text-2xl">待分配用户预览</CardTitle>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => runScan(true)}
                 disabled={scanning || !config?.enabled}
+                className="px-2"
               >
                 {scanning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
                 试运行
@@ -641,66 +649,105 @@ export function AutoGroup() {
                 size="sm"
                 onClick={() => runScan(false)}
                 disabled={scanning || !config?.enabled}
+                className="px-2"
               >
                 {scanning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
                 执行分配
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
             {!config?.enabled && (
-              <div className="text-center py-4 text-muted-foreground">
+              <div className="text-center py-8 text-sm text-muted-foreground">
                 请先启用自动分组功能
               </div>
             )}
             {config?.enabled && (
               <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>用户名</TableHead>
-                      <TableHead>当前分组</TableHead>
-                      <TableHead>注册来源</TableHead>
-                      <TableHead>注册时间</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {previewLoading ? (
+                <div className="space-y-3 md:hidden">
+                  {previewLoading ? (
+                    <div className="flex justify-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : previewUsers.length === 0 ? (
+                    <div className="rounded-lg border border-dashed bg-muted/20 py-10 text-center text-sm text-muted-foreground">
+                      没有待分配的用户
+                    </div>
+                  ) : (
+                    previewUsers.map((user) => (
+                      <div key={user.id} className="min-w-0 rounded-lg border bg-background p-3 shadow-sm">
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{user.username || user.display_name || '-'}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">ID: {user.id}</p>
+                          </div>
+                          <div className="shrink-0">{renderSourceBadge(user.source)}</div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          <div className="min-w-0 rounded-md bg-muted/40 p-2">
+                            <p className="text-muted-foreground">当前分组</p>
+                            <Badge variant="outline" className="mt-1 max-w-full">
+                              <span className="truncate">{user.group || 'default'}</span>
+                            </Badge>
+                          </div>
+                          <div className="min-w-0 rounded-md bg-muted/40 p-2">
+                            <p className="text-muted-foreground">注册时间</p>
+                            <p className="mt-1 truncate font-medium">{formatTime(user.created_time)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8">
-                          <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                        </TableCell>
+                        <TableHead>ID</TableHead>
+                        <TableHead>用户名</TableHead>
+                        <TableHead>当前分组</TableHead>
+                        <TableHead>注册来源</TableHead>
+                        <TableHead>注册时间</TableHead>
                       </TableRow>
-                    ) : previewUsers.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                          没有待分配的用户
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      previewUsers.map((user) => (
-                        <TableRow key={user.id}>
-                          <TableCell>{user.id}</TableCell>
-                          <TableCell>{user.username}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{user.group || 'default'}</Badge>
+                    </TableHeader>
+                    <TableBody>
+                      {previewLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8">
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                           </TableCell>
-                          <TableCell>{renderSourceBadge(user.source)}</TableCell>
-                          <TableCell>{formatTime(user.created_time)}</TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      ) : previewUsers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                            没有待分配的用户
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        previewUsers.map((user) => (
+                          <TableRow key={user.id}>
+                            <TableCell>{user.id}</TableCell>
+                            <TableCell className="max-w-[220px] truncate">{user.username}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{user.group || 'default'}</Badge>
+                            </TableCell>
+                            <TableCell>{renderSourceBadge(user.source)}</TableCell>
+                            <TableCell>{formatTime(user.created_time)}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
 
                 {/* Pagination */}
                 {previewTotalPages > 1 && (
-                  <div className="flex items-center justify-between mt-4">
-                    <p className="text-sm text-muted-foreground">
+                  <div className="flex flex-col gap-3 mt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-center text-sm text-muted-foreground sm:text-left">
                       共 {previewTotal} 条记录
                     </p>
-                    <div className="flex items-center gap-2">
+                    <div className="grid grid-cols-[40px_1fr_40px] items-center gap-2 sm:flex sm:items-center">
                       <Button
                         variant="outline"
                         size="sm"
@@ -709,7 +756,7 @@ export function AutoGroup() {
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
-                      <span className="text-sm">
+                      <span className="text-center text-sm tabular-nums">
                         {previewPage} / {previewTotalPages}
                       </span>
                       <Button
@@ -731,12 +778,82 @@ export function AutoGroup() {
 
       {/* Logs Tab */}
       {activeTab === 'logs' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>分配日志</CardTitle>
+        <Card className="min-w-0">
+          <CardHeader className="p-4 pb-3 sm:p-6 sm:pb-4">
+            <CardTitle className="text-lg sm:text-2xl">分配日志</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Table>
+          <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
+            <div className="space-y-3 md:hidden">
+              {logsLoading ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : logs.length === 0 ? (
+                <div className="rounded-lg border border-dashed bg-muted/20 py-10 text-center text-sm text-muted-foreground">
+                  暂无日志记录
+                </div>
+              ) : (
+                logs.map((log) => (
+                  <div key={log.id} className="min-w-0 rounded-lg border bg-background p-3 shadow-sm">
+                    <div className="flex min-w-0 items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {log.username || '-'}
+                          <span className="ml-1 text-xs text-muted-foreground">#{log.user_id}</span>
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{formatTime(log.created_at)}</p>
+                      </div>
+                      <Badge variant={log.action === 'assign' ? 'default' : 'secondary'} className="shrink-0">
+                        {log.action === 'assign' ? '分配' : '恢复'}
+                      </Badge>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="min-w-0 rounded-md bg-muted/40 p-2">
+                        <p className="text-muted-foreground">原分组</p>
+                        <Badge variant="outline" className="mt-1 max-w-full">
+                          <span className="truncate">{log.old_group || '-'}</span>
+                        </Badge>
+                      </div>
+                      <div className="min-w-0 rounded-md bg-muted/40 p-2">
+                        <p className="text-muted-foreground">新分组</p>
+                        <Badge variant="outline" className="mt-1 max-w-full">
+                          <span className="truncate">{log.new_group || '-'}</span>
+                        </Badge>
+                      </div>
+                      <div className="min-w-0 rounded-md bg-muted/40 p-2">
+                        <p className="text-muted-foreground">来源</p>
+                        <div className="mt-1">{renderSourceBadge(log.source)}</div>
+                      </div>
+                      <div className="min-w-0 rounded-md bg-muted/40 p-2">
+                        <p className="text-muted-foreground">操作者</p>
+                        <p className="mt-1 truncate font-medium">{log.operator || '-'}</p>
+                      </div>
+                    </div>
+
+                    {log.action === 'assign' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => revertUser(log.id)}
+                        disabled={reverting === log.id}
+                        className="mt-3 w-full"
+                      >
+                        {reverting === log.id ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-4 w-4 mr-2" />
+                        )}
+                        恢复分组
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="hidden md:block">
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>时间</TableHead>
@@ -803,13 +920,14 @@ export function AutoGroup() {
                   ))
                 )}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
 
             {/* Pagination */}
             {logsTotalPages > 1 && (
-              <div className="flex items-center justify-between mt-4">
-                <p className="text-sm text-muted-foreground">共 {logsTotal} 条记录</p>
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-3 mt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-center text-sm text-muted-foreground sm:text-left">共 {logsTotal} 条记录</p>
+                <div className="grid grid-cols-[40px_1fr_40px] items-center gap-2 sm:flex sm:items-center">
                   <Button
                     variant="outline"
                     size="sm"
@@ -818,7 +936,7 @@ export function AutoGroup() {
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <span className="text-sm">
+                  <span className="text-center text-sm tabular-nums">
                     {logsPage} / {logsTotalPages}
                   </span>
                   <Button

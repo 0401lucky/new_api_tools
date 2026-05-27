@@ -77,15 +77,15 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
   }
 
   const inputClass = (hasError: boolean) =>
-    `w-full px-3 py-2 border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-colors ${
+    `w-full min-w-0 px-3 py-2 text-sm border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-colors ${
       hasError ? 'border-destructive' : 'border-input'
     }`
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="min-w-0 space-y-5 sm:space-y-6">
       {/* 基本信息 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
+        <div className="min-w-0">
           <label className="block text-sm font-medium mb-1">
             兑换码名称 <span className="text-destructive">*</span>
           </label>
@@ -99,7 +99,7 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
           {errors.name && <p className="mt-1 text-sm text-destructive">{errors.name}</p>}
         </div>
 
-        <div>
+        <div className="min-w-0">
           <label className="block text-sm font-medium mb-1">
             生成数量 <span className="text-destructive">*</span>
           </label>
@@ -116,7 +116,7 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
       </div>
 
       {/* 前缀 */}
-      <div>
+      <div className="min-w-0">
         <label className="block text-sm font-medium mb-1">Key 前缀 (可选)</label>
         <input
           type="text"
@@ -131,9 +131,9 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
       </div>
 
       {/* 额度模式 */}
-      <div>
+      <div className="min-w-0">
         <label className="block text-sm font-medium mb-2">额度模式</label>
-        <div className="flex gap-4 mb-3">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 mb-3">
           {(['fixed', 'random'] as const).map((mode) => (
             <label key={mode} className="flex items-center gap-2 cursor-pointer">
               <input
@@ -150,7 +150,7 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
         </div>
 
         {formData.quota_mode === 'fixed' ? (
-          <div>
+          <div className="min-w-0">
             <label className="block text-sm font-medium mb-1">固定额度 (USD)</label>
             <input
               type="number"
@@ -164,8 +164,8 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
             {errors.fixed_amount && <p className="mt-1 text-sm text-destructive">{errors.fixed_amount}</p>}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="min-w-0">
               <label className="block text-sm font-medium mb-1">最小额度 (USD)</label>
               <input
                 type="number"
@@ -177,7 +177,7 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
               />
               {errors.min_amount && <p className="mt-1 text-sm text-destructive">{errors.min_amount}</p>}
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="block text-sm font-medium mb-1">最大额度 (USD)</label>
               <input
                 type="number"
@@ -194,9 +194,9 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
       </div>
 
       {/* 过期模式 */}
-      <div>
+      <div className="min-w-0">
         <label className="block text-sm font-medium mb-2">过期模式</label>
-        <div className="flex flex-wrap gap-4 mb-3">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 mb-3">
           {([['never', '永不过期'], ['days', '指定天数'], ['date', '指定日期']] as const).map(([mode, label]) => (
             <label key={mode} className="flex items-center gap-2 cursor-pointer">
               <input
@@ -213,7 +213,7 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
         </div>
 
         {formData.expire_mode === 'days' && (
-          <div>
+          <div className="min-w-0">
             <label className="block text-sm font-medium mb-1">过期天数</label>
             <input
               type="number"
@@ -227,7 +227,7 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
         )}
 
         {formData.expire_mode === 'date' && (
-          <div>
+          <div className="min-w-0">
             <label className="block text-sm font-medium mb-1">过期日期</label>
             <input
               type="datetime-local"
@@ -241,8 +241,8 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
       </div>
 
       {/* 提交按钮 */}
-      <div className="pt-4">
-        <Button type="submit" disabled={isLoading} className="w-full" size="lg">
+      <div className="pt-2 sm:pt-4">
+        <Button type="submit" disabled={isLoading} className="w-full px-4" size="lg">
           {isLoading ? (
             <>
               <Loader2 className="h-5 w-5 mr-2 animate-spin" />

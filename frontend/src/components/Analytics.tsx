@@ -572,12 +572,12 @@ export function Analytics() {
 
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-4 overflow-hidden sm:space-y-6">
       {/* Data Inconsistent Warning */}
       {syncStatus?.data_inconsistent && (
         <Card className="border-destructive bg-destructive/10">
           <CardContent className="p-4">
-            <div className="flex items-start gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
               <div className="flex-1">
                 <h3 className="font-medium text-destructive">数据不一致</h3>
@@ -585,7 +585,7 @@ export function Analytics() {
                   检测到日志数据已被删除。本地记录到 #{syncStatus.last_log_id}，数据库最大ID为 #{syncStatus.max_log_id}。
                 </p>
               </div>
-              <Button variant="destructive" size="sm" onClick={autoResetInconsistent}>
+              <Button variant="destructive" size="sm" onClick={autoResetInconsistent} className="w-full sm:w-auto">
                 <RefreshCw className="h-4 w-4 mr-1" />
                 自动重置
               </Button>
@@ -598,7 +598,7 @@ export function Analytics() {
       {syncStatus && (syncStatus.needs_initial_sync || syncStatus.is_initializing) && !syncStatus.data_inconsistent && (
         <Card className={syncStatus.is_initializing ? 'border-primary bg-primary/5' : 'border-yellow-500 bg-yellow-50 dark:border-yellow-600 dark:bg-yellow-950'}>
           <CardContent className="p-4">
-            <div className="flex items-start gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <RefreshCw className={`h-5 w-5 mt-0.5 ${syncStatus.is_initializing ? 'text-primary' : 'text-yellow-600'}`} />
               <div className="flex-1">
                 <h3 className={`font-medium ${syncStatus.is_initializing ? 'text-primary' : 'text-yellow-800'}`}>
@@ -626,6 +626,7 @@ export function Analytics() {
                 size="sm"
                 onClick={() => batchProcessLogs(false)}
                 disabled={batchProcessing}
+                className="w-full sm:w-auto"
               >
                 {batchProcessing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
                 {batchProcessing ? '同步中...' : syncStatus.is_initializing ? '继续同步' : '开始同步'}
@@ -635,6 +636,7 @@ export function Analytics() {
                   variant="destructive"
                   size="sm"
                   onClick={stopBatchProcess}
+                  className="w-full sm:w-auto"
                 >
                   停止
                 </Button>
@@ -658,7 +660,7 @@ export function Analytics() {
                 {state?.last_processed_at && <span className="ml-2">· 上次更新: {formatTimestamp(state.last_processed_at)}</span>}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
               {/* 刷新间隔选择和倒计时 - 只有初始化完成后才显示 */}
               {syncStatus && !syncStatus.needs_initial_sync && !syncStatus.is_initializing && (
                 <div className="relative" ref={dropdownRef}>
@@ -666,7 +668,7 @@ export function Analytics() {
                     variant="outline"
                     size="sm"
                     onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
-                    className="h-9 min-w-[100px]"
+                    className="h-9 w-full justify-between sm:min-w-[100px]"
                   >
                     <Timer className="h-4 w-4 mr-2" />
                     {refreshInterval > 0 && countdown > 0 ? (
@@ -680,7 +682,7 @@ export function Analytics() {
                   </Button>
 
                   {showIntervalDropdown && (
-                    <div className="absolute right-0 mt-1 w-48 bg-popover border rounded-md shadow-lg z-50">
+                    <div className="absolute right-0 mt-1 w-48 max-w-[calc(100vw-2rem)] bg-popover border rounded-md shadow-lg z-50">
                       <div className="p-2 border-b">
                         <p className="text-xs text-muted-foreground">刷新间隔</p>
                       </div>
@@ -705,11 +707,11 @@ export function Analytics() {
                   )}
                 </div>
               )}
-              <Button onClick={processLogs} disabled={processing || batchProcessing}>
+              <Button onClick={processLogs} disabled={processing || batchProcessing} className="w-full sm:w-auto">
                 {processing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                 处理新日志
               </Button>
-              <Button variant="destructive" onClick={resetAnalytics}>
+              <Button variant="destructive" onClick={resetAnalytics} className="w-full sm:w-auto">
                 <Trash2 className="h-4 w-4 mr-2" />
                 重置
               </Button>
@@ -721,39 +723,54 @@ export function Analytics() {
       {/* User Rankings */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader>
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-lg">用户请求数排行 <span className="text-sm font-normal text-muted-foreground">Top 10</span></CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 sm:px-6">
             {requestRanking.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">排名</TableHead>
-                    <TableHead>用户</TableHead>
-                    <TableHead className="text-right">请求数</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <>
+                <div className="divide-y rounded-lg border md:hidden">
                   {requestRanking.map((user, index) => (
-                    <TableRow key={user.user_id}>
-                      <TableCell><RankBadge rank={index + 1} /></TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium text-primary">
-                            {user.username.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-medium">{user.username}</div>
-                            <div className="text-xs text-muted-foreground">ID: {user.user_id}</div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">{formatNumber(user.request_count)}</TableCell>
-                    </TableRow>
+                    <RankingMobileItem
+                      key={user.user_id}
+                      user={user}
+                      rank={index + 1}
+                      value={formatNumber(user.request_count)}
+                      label="请求数"
+                    />
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-16">排名</TableHead>
+                        <TableHead>用户</TableHead>
+                        <TableHead className="text-right">请求数</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {requestRanking.map((user, index) => (
+                        <TableRow key={user.user_id}>
+                          <TableCell><RankBadge rank={index + 1} /></TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium text-primary">
+                                {user.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-medium">{user.username}</div>
+                                <div className="text-xs text-muted-foreground">ID: {user.user_id}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">{formatNumber(user.request_count)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             ) : (
               <div className="py-12 text-center text-muted-foreground">暂无数据</div>
             )}
@@ -761,39 +778,56 @@ export function Analytics() {
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-lg">用户额度消耗排行 <span className="text-sm font-normal text-muted-foreground">Top 10</span></CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 sm:px-6">
             {quotaRanking.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">排名</TableHead>
-                    <TableHead>用户</TableHead>
-                    <TableHead className="text-right">消耗额度</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <>
+                <div className="divide-y rounded-lg border md:hidden">
                   {quotaRanking.map((user, index) => (
-                    <TableRow key={user.user_id}>
-                      <TableCell><RankBadge rank={index + 1} /></TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center text-sm font-medium text-green-600">
-                            {user.username.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-medium">{user.username}</div>
-                            <div className="text-xs text-muted-foreground">ID: {user.user_id}</div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-green-600">{formatQuota(user.quota_used)}</TableCell>
-                    </TableRow>
+                    <RankingMobileItem
+                      key={user.user_id}
+                      user={user}
+                      rank={index + 1}
+                      value={formatQuota(user.quota_used)}
+                      label="消耗额度"
+                      valueClassName="text-green-600"
+                      avatarClassName="bg-green-100 text-green-600"
+                    />
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-16">排名</TableHead>
+                        <TableHead>用户</TableHead>
+                        <TableHead className="text-right">消耗额度</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {quotaRanking.map((user, index) => (
+                        <TableRow key={user.user_id}>
+                          <TableCell><RankBadge rank={index + 1} /></TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center text-sm font-medium text-green-600">
+                                {user.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-medium">{user.username}</div>
+                                <div className="text-xs text-muted-foreground">ID: {user.user_id}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-green-600">{formatQuota(user.quota_used)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             ) : (
               <div className="py-12 text-center text-muted-foreground">暂无数据</div>
             )}
@@ -803,45 +837,54 @@ export function Analytics() {
 
       {/* Model Statistics */}
       <Card>
-        <CardHeader>
+        <CardHeader className="p-4 sm:p-6">
           <CardTitle className="text-lg">模型统计 <span className="text-sm font-normal text-muted-foreground">成功率 & 空回复率</span></CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 sm:px-6">
           {modelStats.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>模型</TableHead>
-                  <TableHead className="text-right">总请求</TableHead>
-                  <TableHead className="text-right">成功数</TableHead>
-                  <TableHead className="text-right">失败数</TableHead>
-                  <TableHead className="text-right">空回复数</TableHead>
-                  <TableHead className="text-right">成功率</TableHead>
-                  <TableHead className="text-right">空回复率</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <div className="space-y-3 md:hidden">
                 {modelStats.map((model) => (
-                  <TableRow key={model.model_name}>
-                    <TableCell className="font-medium max-w-xs truncate" title={model.model_name}>{model.model_name}</TableCell>
-                    <TableCell className="text-right">{model.total_requests.toLocaleString()}</TableCell>
-                    <TableCell className="text-right text-green-600">{model.success_count.toLocaleString()}</TableCell>
-                    <TableCell className="text-right text-red-600">{model.failure_count.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{model.empty_count.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">
-                      <span className={model.success_rate >= 95 ? 'text-green-600' : model.success_rate >= 80 ? 'text-yellow-600' : 'text-red-600'}>
-                        {model.success_rate.toFixed(1)}%
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className={model.empty_rate <= 5 ? 'text-green-600' : model.empty_rate <= 15 ? 'text-yellow-600' : 'text-red-600'}>
-                        {model.empty_rate.toFixed(1)}%
-                      </span>
-                    </TableCell>
-                  </TableRow>
+                  <ModelStatsMobileCard key={model.model_name} model={model} />
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>模型</TableHead>
+                      <TableHead className="text-right">总请求</TableHead>
+                      <TableHead className="text-right">成功数</TableHead>
+                      <TableHead className="text-right">失败数</TableHead>
+                      <TableHead className="text-right">空回复数</TableHead>
+                      <TableHead className="text-right">成功率</TableHead>
+                      <TableHead className="text-right">空回复率</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {modelStats.map((model) => (
+                      <TableRow key={model.model_name}>
+                        <TableCell className="font-medium max-w-xs truncate" title={model.model_name}>{model.model_name}</TableCell>
+                        <TableCell className="text-right">{model.total_requests.toLocaleString()}</TableCell>
+                        <TableCell className="text-right text-green-600">{model.success_count.toLocaleString()}</TableCell>
+                        <TableCell className="text-right text-red-600">{model.failure_count.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{model.empty_count.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={model.success_rate >= 95 ? 'text-green-600' : model.success_rate >= 80 ? 'text-yellow-600' : 'text-red-600'}>
+                            {model.success_rate.toFixed(1)}%
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={model.empty_rate <= 5 ? 'text-green-600' : model.empty_rate <= 15 ? 'text-yellow-600' : 'text-red-600'}>
+                            {model.empty_rate.toFixed(1)}%
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           ) : (
             <div className="py-12 text-center text-muted-foreground">暂无数据，请先处理日志</div>
           )}
@@ -851,7 +894,7 @@ export function Analytics() {
       {/* Legend */}
       <Card className="bg-muted/50">
         <CardContent className="p-4">
-          <div className="flex flex-wrap gap-6 text-sm">
+          <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap sm:gap-6">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-green-500" />
               <span>成功率 ≥ 95% / 空回复率 ≤ 5%</span>
@@ -870,7 +913,7 @@ export function Analytics() {
 
       {/* Confirm Dialog */}
       <Dialog open={confirmDialog.isOpen} onOpenChange={(open: boolean) => setConfirmDialog(prev => ({ ...prev, isOpen: open }))}>
-        <DialogContent>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md">
           <DialogHeader>
             <DialogTitle>{confirmDialog.title}</DialogTitle>
             <DialogDescription>{confirmDialog.message}</DialogDescription>
@@ -881,6 +924,69 @@ export function Analytics() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function RankingMobileItem({
+  user,
+  rank,
+  value,
+  label,
+  valueClassName,
+  avatarClassName = 'bg-primary/10 text-primary',
+}: {
+  user: UserRanking
+  rank: number
+  value: string
+  label: string
+  valueClassName?: string
+  avatarClassName?: string
+}) {
+  return (
+    <div className="flex items-center gap-3 p-3">
+      <RankBadge rank={rank} />
+      <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-sm font-medium", avatarClassName)}>
+        {user.username.charAt(0).toUpperCase()}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium">{user.username}</div>
+        <div className="text-xs text-muted-foreground">ID: {user.user_id}</div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div className={cn("text-sm font-semibold tabular-nums", valueClassName)}>{value}</div>
+        <div className="text-[10px] text-muted-foreground">{label}</div>
+      </div>
+    </div>
+  )
+}
+
+function ModelStatsMobileCard({ model }: { model: ModelStats }) {
+  const successClass = model.success_rate >= 95 ? 'text-green-600' : model.success_rate >= 80 ? 'text-yellow-600' : 'text-red-600'
+  const emptyClass = model.empty_rate <= 5 ? 'text-green-600' : model.empty_rate <= 15 ? 'text-yellow-600' : 'text-red-600'
+
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="min-w-0 font-medium" title={model.model_name}>
+        <span className="block truncate">{model.model_name}</span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <Metric label="总请求" value={model.total_requests.toLocaleString()} />
+        <Metric label="成功数" value={model.success_count.toLocaleString()} valueClassName="text-green-600" />
+        <Metric label="失败数" value={model.failure_count.toLocaleString()} valueClassName="text-red-600" />
+        <Metric label="空回复" value={model.empty_count.toLocaleString()} />
+        <Metric label="成功率" value={`${model.success_rate.toFixed(1)}%`} valueClassName={successClass} />
+        <Metric label="空回复率" value={`${model.empty_rate.toFixed(1)}%`} valueClassName={emptyClass} />
+      </div>
+    </div>
+  )
+}
+
+function Metric({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
+  return (
+    <div className="rounded-md bg-muted/40 px-2.5 py-2">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className={cn("mt-0.5 font-semibold tabular-nums", valueClassName)}>{value}</div>
     </div>
   )
 }

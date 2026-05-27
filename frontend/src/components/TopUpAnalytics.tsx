@@ -235,8 +235,8 @@ export function TopUpAnalytics({ active }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
-        <Button variant="outline" size="sm" onClick={handleRefreshAll} disabled={refreshing} className="h-9">
+      <div className="flex items-center justify-stretch sm:justify-end">
+        <Button variant="outline" size="sm" onClick={handleRefreshAll} disabled={refreshing} className="h-9 w-full sm:w-auto">
           <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
           刷新全部
         </Button>
@@ -346,19 +346,19 @@ function ComparePanel({
   growth: number
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-2">
+    <div className="min-w-0 rounded-lg border bg-card p-4 space-y-2">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
           <Icon className="h-4 w-4" />
           {label}
         </div>
         <GrowthBadge value={growth} />
       </div>
-      <div className="text-2xl font-bold">{fmtMoney(value)}</div>
+      <div className="break-words text-xl font-bold sm:text-2xl">{fmtMoney(value)}</div>
       <div className="text-xs text-muted-foreground">{fmtNum(count)} 笔</div>
-      <div className="text-xs text-muted-foreground border-t pt-2">
+      <div className="break-words border-t pt-2 text-xs text-muted-foreground">
         {prevLabel}: <span className="font-medium">{fmtMoney(prevValue)}</span>
-        <span className="ml-2">{fmtNum(prevCount)} 笔</span>
+        <span className="ml-0 block sm:ml-2 sm:inline">{fmtNum(prevCount)} 笔</span>
       </div>
     </div>
   )
@@ -381,15 +381,15 @@ function PayerQualityBlock({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2">
               <Users className="h-4 w-4 text-primary" />
               付费用户质量
             </CardTitle>
             <CardDescription>首充、复购、ARPPU 与收入集中度</CardDescription>
           </div>
-          <div className="w-28">
+          <div className="w-full sm:w-28">
             <Select value={days.toString()} onChange={e => onDaysChange(parseInt(e.target.value))}>
               <option value="7">近 7 天</option>
               <option value="30">近 30 天</option>
@@ -417,10 +417,10 @@ function PayerQualityBlock({
 
 function MetricPanel({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="rounded-lg border bg-muted/20 p-4">
+    <div className="min-w-0 rounded-lg border bg-muted/20 p-4">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-2 text-2xl font-bold tabular-nums">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
+      <div className="mt-2 break-words text-xl font-bold tabular-nums sm:text-2xl">{value}</div>
+      <div className="mt-1 break-words text-xs text-muted-foreground">{detail}</div>
     </div>
   )
 }
@@ -467,34 +467,34 @@ function TrendsBlock({
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" />
               收入趋势
             </CardTitle>
             <CardDescription>按粒度统计成功充值金额</CardDescription>
           </div>
-          <div className="flex items-center gap-2 text-right">
-            <div className="text-xl font-bold text-primary tabular-nums">{fmtExactMoney(total)}</div>
+          <div className="flex min-w-0 items-baseline gap-2 sm:text-right">
+            <div className="min-w-0 break-words text-lg font-bold text-primary tabular-nums sm:text-xl">{fmtExactMoney(total)}</div>
             <span className="text-xs text-muted-foreground">区间合计</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3 mt-3">
-          <div className="flex gap-1">
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+          <div className="grid grid-cols-3 gap-1 sm:flex">
             {(['daily', 'weekly', 'monthly'] as Granularity[]).map(g => (
               <Button
                 key={g}
                 variant={granularity === g ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => onGranularityChange(g)}
-                className="h-8"
+                className="h-8 min-w-0"
               >
                 {g === 'daily' ? '日' : g === 'weekly' ? '周' : '月'}
               </Button>
             ))}
           </div>
-          <div className="w-32">
+          <div className="w-full sm:w-32">
             <Select value={days.toString()} onChange={e => onDaysChange(parseInt(e.target.value))}>
               <option value="7">近 7 天</option>
               <option value="14">近 14 天</option>
@@ -505,11 +505,11 @@ function TrendsBlock({
               <option value="365">近 365 天</option>
             </Select>
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-input bg-background p-0.5 shadow-sm">
+          <div className="grid grid-cols-2 gap-1 rounded-md border border-input bg-background p-0.5 shadow-sm sm:flex sm:w-auto">
             <Button
               variant={chartType === 'bar' ? 'default' : 'ghost'}
               size="icon"
-              className="h-7 w-7"
+              className="h-7 w-full sm:w-7"
               aria-label="柱状图"
               aria-pressed={chartType === 'bar'}
               title="柱状图"
@@ -520,7 +520,7 @@ function TrendsBlock({
             <Button
               variant={chartType === 'line' ? 'default' : 'ghost'}
               size="icon"
-              className="h-7 w-7"
+              className="h-7 w-full sm:w-7"
               aria-label="折线图"
               aria-pressed={chartType === 'line'}
               title="折线图"
@@ -623,15 +623,15 @@ function FinancialBlock({
   return (
     <Card className="flex flex-col">
       <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2">
               <CalendarDays className="h-4 w-4 text-primary" />
               月度财务汇总
             </CardTitle>
             <CardDescription>近 N 个月成功充值收入与环比</CardDescription>
           </div>
-          <div className="w-28">
+          <div className="w-full sm:w-28">
             <Select value={months.toString()} onChange={e => onMonthsChange(parseInt(e.target.value))}>
               <option value="6">近 6 月</option>
               <option value="12">近 12 月</option>
@@ -641,7 +641,40 @@ function FinancialBlock({
         </div>
       </CardHeader>
       <CardContent className="flex-1 p-0">
-        <div className="overflow-x-auto">
+        <div className="divide-y md:hidden">
+          {data.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">暂无数据</div>
+          ) : (
+            data.map((row, i) => (
+              <div key={i} className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-medium">{row.period}</div>
+                  {i === data.length - 1 ? (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  ) : (
+                    <GrowthBadge value={row.growth_rate} />
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3 rounded-md bg-muted/30 p-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="text-xs text-muted-foreground">收入</div>
+                    <div className="break-words font-mono font-semibold">{fmtMoney(row.revenue)}</div>
+                  </div>
+                  <div className="min-w-0 text-right">
+                    <div className="text-xs text-muted-foreground">笔数</div>
+                    <div className="font-medium">{fmtNum(row.count)}</div>
+                  </div>
+                  <div className="col-span-2 min-w-0">
+                    <div className="text-xs text-muted-foreground">客单价</div>
+                    <div className="break-words font-mono">{fmtMoney(row.avg_order)}</div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="hidden md:block">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
@@ -693,16 +726,16 @@ function TopUsersBlock({
   return (
     <Card className="flex flex-col">
       <CardHeader>
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2">
               <Trophy className="h-4 w-4 text-amber-500" />
               Top 充值用户
             </CardTitle>
             <CardDescription>按成功充值金额排序</CardDescription>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-24">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
+            <div className="min-w-0 sm:w-24">
               <Select value={limit.toString()} onChange={e => onLimitChange(parseInt(e.target.value))}>
                 <option value="5">前 5</option>
                 <option value="10">前 10</option>
@@ -710,7 +743,7 @@ function TopUsersBlock({
                 <option value="50">前 50</option>
               </Select>
             </div>
-            <div className="w-24">
+            <div className="min-w-0 sm:w-24">
               <Select value={days.toString()} onChange={e => onDaysChange(parseInt(e.target.value))}>
                 <option value="7">近 7 天</option>
                 <option value="30">近 30 天</option>
@@ -730,19 +763,19 @@ function TopUsersBlock({
               const pct = (u.money / max) * 100
               const rankColor = i === 0 ? 'bg-amber-500 text-white' : i === 1 ? 'bg-slate-400 text-white' : i === 2 ? 'bg-orange-700 text-white' : 'bg-muted text-muted-foreground'
               return (
-                <div key={u.user_id} className="flex items-center gap-3">
+                <div key={u.user_id} className="flex items-start gap-3 rounded-md py-1">
                   <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0", rankColor)}>
                     {i + 1}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="mb-1 flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
                       <span className="text-sm font-medium truncate" title={u.username}>{u.username || `用户${u.user_id}`}</span>
-                      <span className="text-sm font-mono font-semibold flex-shrink-0">{fmtMoney(u.money)}</span>
+                      <span className="break-words text-sm font-mono font-semibold sm:flex-shrink-0">{fmtMoney(u.money)}</span>
                     </div>
                     <div className="relative h-2 bg-muted rounded-full overflow-hidden">
                       <div className="absolute inset-y-0 left-0 bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
                     </div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                    <div className="mt-0.5 break-words text-[10px] text-muted-foreground">
                       ID {u.user_id} · {u.count} 笔 · 入账 {fmtNum(u.amount)} USD
                     </div>
                   </div>
@@ -768,15 +801,15 @@ function PaymentBlock({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-primary" />
               支付方式分布
             </CardTitle>
             <CardDescription>按成功充值金额占比</CardDescription>
           </div>
-          <div className="w-28">
+          <div className="w-full sm:w-28">
             <Select value={days.toString()} onChange={e => onDaysChange(parseInt(e.target.value))}>
               <option value="7">近 7 天</option>
               <option value="30">近 30 天</option>
@@ -805,12 +838,12 @@ function PaymentBlock({
             {/* 列表 */}
             <div className="space-y-1.5">
               {data.map((p, i) => (
-                <div key={p.method} className="flex items-center gap-2 text-sm">
+                <div key={p.method} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-sm sm:flex">
                   <span className={cn("w-2.5 h-2.5 rounded-sm flex-shrink-0", palette[i % palette.length])} />
-                  <span className="flex-1 truncate">{p.method || '未知'}</span>
-                  <span className="text-muted-foreground text-xs">{fmtNum(p.count)} 笔</span>
-                  <span className="font-mono w-20 text-right">{fmtMoney(p.money)}</span>
-                  <Badge variant="outline" className="font-normal text-xs w-14 justify-center">{fmtPct(p.percentage)}</Badge>
+                  <span className="min-w-0 truncate sm:flex-1">{p.method || '未知'}</span>
+                  <Badge variant="outline" className="justify-center font-normal text-xs">{fmtPct(p.percentage)}</Badge>
+                  <span className="col-start-2 text-xs text-muted-foreground">{fmtNum(p.count)} 笔</span>
+                  <span className="col-start-3 break-words text-right font-mono text-sm sm:w-20">{fmtMoney(p.money)}</span>
                 </div>
               ))}
             </div>
@@ -861,9 +894,9 @@ function HeatmapBlock({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base flex items-center gap-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
               <Activity className="h-4 w-4 text-primary" />
               充值时段热力图
               <Dialog>
@@ -878,7 +911,7 @@ function HeatmapBlock({
                     <HelpCircle className="h-4 w-4" />
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-xl">
+                <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-xl">
                   <DialogHeader>
                     <DialogTitle>充值时段热力图说明</DialogTitle>
                     <DialogDescription>
@@ -919,7 +952,7 @@ function HeatmapBlock({
             </CardTitle>
             <CardDescription>按星期 × 小时统计成功充值笔数（本地时区）</CardDescription>
           </div>
-          <div className="w-28">
+          <div className="w-full sm:w-28">
             <Select value={days.toString()} onChange={e => onDaysChange(parseInt(e.target.value))}>
               <option value="7">近 7 天</option>
               <option value="30">近 30 天</option>
@@ -930,25 +963,25 @@ function HeatmapBlock({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <div className="inline-block min-w-full">
-            {/* 小时表头 */}
-            <div className="flex pl-10 mb-1">
+        <div className="w-full">
+          <div className="space-y-1">
+            <div className="grid grid-cols-[2.5rem_repeat(24,minmax(0,1fr))] gap-x-px">
+              <div aria-hidden="true" />
               {Array.from({ length: 24 }, (_, h) => (
-                <div key={h} className="flex-1 min-w-[16px] text-center text-[9px] text-muted-foreground">
-                  {h % 3 === 0 ? h : ''}
+                <div key={h} className="min-w-0 text-center text-[8px] text-muted-foreground sm:text-[9px]">
+                  <span className="sm:hidden">{h % 6 === 0 ? h : ''}</span>
+                  <span className="hidden sm:inline">{h % 3 === 0 ? h : ''}</span>
                 </div>
               ))}
             </div>
-            {/* 7 行星期 */}
             {dayLabels.map((label, dow) => (
-              <div key={dow} className="flex items-center mb-1">
-                <div className="w-10 text-xs text-muted-foreground text-right pr-2 flex-shrink-0">{label}</div>
+              <div key={dow} className="grid grid-cols-[2.5rem_repeat(24,minmax(0,1fr))] gap-x-px">
+                <div className="pr-2 text-right text-xs text-muted-foreground">{label}</div>
                 {grid.g[dow].map((cell, h) => (
                   <div
                     key={h}
                     className={cn(
-                      "flex-1 min-w-[16px] h-6 mx-px rounded-sm transition-all hover:ring-2 hover:ring-primary cursor-pointer",
+                      "h-4 min-w-0 rounded-[2px] transition-all hover:ring-2 hover:ring-primary sm:h-6",
                       cellColor(cell.count)
                     )}
                     title={`${label} ${h}:00 · ${cell.count} 笔 · ${fmtMoney(cell.money)}`}
@@ -956,8 +989,7 @@ function HeatmapBlock({
                 ))}
               </div>
             ))}
-            {/* 图例 */}
-            <div className="flex items-center gap-2 mt-3 text-[10px] text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground sm:gap-2">
               <span>少</span>
               <div className="w-4 h-3 rounded-sm bg-muted/40" />
               <div className="w-4 h-3 rounded-sm bg-blue-200" />
@@ -1002,15 +1034,15 @@ function FunnelBlock({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2">
               <Filter className="h-4 w-4 text-primary" />
               转化漏斗
             </CardTitle>
             <CardDescription>状态分布与按支付方式的成功率</CardDescription>
           </div>
-          <div className="w-28">
+          <div className="w-full sm:w-28">
             <Select value={days.toString()} onChange={e => onDaysChange(parseInt(e.target.value))}>
               <option value="7">近 7 天</option>
               <option value="30">近 30 天</option>
@@ -1031,12 +1063,12 @@ function FunnelBlock({
                 const pct = total > 0 ? (s.count / total) * 100 : 0
                 return (
                   <div key={s.status}>
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <div className="flex items-center gap-2">
+                    <div className="mb-1 flex flex-col gap-1 text-xs sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-2">
                         <span className={cn("w-2 h-2 rounded-full", statusColor(s.status))} />
                         <span className="font-medium">{statusLabel(s.status)}</span>
                       </div>
-                      <span className="text-muted-foreground">
+                      <span className="break-words text-muted-foreground sm:text-right">
                         {fmtNum(s.count)} 笔 · {fmtMoney(s.money)} · {pct.toFixed(1)}%
                       </span>
                     </div>
@@ -1048,9 +1080,9 @@ function FunnelBlock({
               })}
             </div>
             {/* 平均完成时长 */}
-            <div className="flex items-center justify-between text-sm border-t pt-3">
+            <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
               <span className="text-muted-foreground">平均完成时长</span>
-              <span className="font-medium font-mono">
+              <span className="break-words text-right font-mono font-medium">
                 {data.avg_completion_secs > 0 ? formatDuration(data.avg_completion_secs) : '-'}
               </span>
             </div>
@@ -1065,14 +1097,14 @@ function FunnelBlock({
               ) : (
                 <div className="space-y-1.5">
                   {data.by_payment_method.map(p => (
-                    <div key={p.method} className="flex items-center justify-between text-xs">
-                      <span className="truncate flex-1">{p.method}</span>
-                      <span className="text-muted-foreground tabular-nums w-32 text-right">
-                        {fmtNum(p.success_count)} / {fmtNum(p.total_count)}
-                      </span>
-                      <Badge variant={p.success_rate >= 90 ? 'success' : p.success_rate >= 70 ? 'warning' : 'destructive'} className="ml-2 w-14 justify-center">
+                    <div key={p.method} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-xs">
+                      <span className="min-w-0 truncate">{p.method}</span>
+                      <Badge variant={p.success_rate >= 90 ? 'success' : p.success_rate >= 70 ? 'warning' : 'destructive'} className="justify-center">
                         {fmtPct(p.success_rate)}
                       </Badge>
+                      <span className="text-muted-foreground tabular-nums">
+                        {fmtNum(p.success_count)} / {fmtNum(p.total_count)}
+                      </span>
                     </div>
                   ))}
                 </div>

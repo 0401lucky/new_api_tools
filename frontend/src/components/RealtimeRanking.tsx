@@ -226,6 +226,385 @@ function getInitialView(): 'leaderboards' | 'banned_list' | 'ip_monitoring' | 'a
   return 'leaderboards'
 }
 
+interface AiSuspiciousUserItem {
+  user_id: number
+  username: string
+  risk_flags: string[]
+  rpm: number
+  total_requests: number
+  empty_rate: number
+  failure_rate: number
+  unique_ips: number
+  rapid_switch_count: number
+}
+
+interface AiAuditLogItem {
+  id: number
+  scan_id: string
+  status: string
+  window: string
+  total_scanned: number
+  total_processed: number
+  banned_count: number
+  warned_count: number
+  skipped_count: number
+  error_count: number
+  dry_run: boolean
+  elapsed_seconds: number
+  error_message: string
+  details: any
+  created_at: number
+}
+
+function BannedUserMobileCard({
+  user,
+  mutating,
+  onOpen,
+  onUnban,
+}: {
+  user: BannedUserItem
+  mutating: boolean
+  onOpen: () => void
+  onUnban: () => void
+}) {
+  const bannedDate = user.banned_at ? new Date(user.banned_at * 1000) : null
+
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-red-200 bg-red-100 text-sm font-bold text-red-600 dark:border-red-800/50 dark:bg-red-900/30 dark:text-red-400">
+          {(user.display_name || user.username)[0]?.toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-bold">{user.display_name || user.username}</span>
+            <Badge variant="secondary" className="h-5 shrink-0 px-1.5 py-0 text-[10px]">#{user.id}</Badge>
+          </div>
+          {user.display_name && user.display_name !== user.username && (
+            <div className="truncate text-xs text-muted-foreground">@{user.username}</div>
+          )}
+          <div className="break-all text-xs text-muted-foreground">{user.email || '无邮箱'}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          <div className="text-muted-foreground">请求数</div>
+          <div className="mt-0.5 font-semibold tabular-nums">{formatNumber(user.request_count)}</div>
+        </div>
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          <div className="text-muted-foreground">消耗额度</div>
+          <div className="mt-0.5 font-semibold tabular-nums">{formatQuota(user.used_quota)}</div>
+        </div>
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          <div className="text-muted-foreground">封禁时间</div>
+          <div className="mt-0.5 font-semibold">
+            {bannedDate ? bannedDate.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+          </div>
+        </div>
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          <div className="text-muted-foreground">操作者</div>
+          <div className="mt-0.5 truncate font-semibold">{user.ban_operator || 'System'}</div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {renderReasonBadge(user.ban_reason)}
+        {user.ban_context?.source && (
+          <Badge variant="outline" className="text-[10px]">
+            {user.ban_context.source === 'risk_center' ? '自动风控' :
+              user.ban_context.source === 'ip_monitoring' ? 'IP监控' :
+                user.ban_context.source === 'ai_auto_ban' ? 'AI审查' : '人工操作'}
+          </Badge>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="outline" size="sm" onClick={onOpen}>
+          <Eye className="mr-1.5 h-3.5 w-3.5" />
+          详情
+        </Button>
+        <Button variant="outline" size="sm" disabled={mutating} onClick={onUnban} className="text-green-700 hover:bg-green-50 hover:text-green-800">
+          <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+          解封
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AuditRecordMobileCard({ record, onOpen }: { record: BanRecordItem; onOpen: () => void }) {
+  const dateObj = new Date(record.created_at * 1000)
+  const isTokenBan = record.context?.token_id !== undefined
+
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold tabular-nums">
+            {dateObj.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          </div>
+          <div className="mt-1 truncate text-xs text-muted-foreground">执行人：{record.operator || 'System'}</div>
+        </div>
+        <Badge variant={record.action === 'ban' ? 'destructive' : 'success'} className="shrink-0">
+          {record.action === 'ban' ? '封禁' : '解封'}
+        </Badge>
+      </div>
+
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-background text-sm font-bold">
+          {(record.username || 'U')[0]?.toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-bold">{record.username || `User#${record.user_id}`}</div>
+          <div className="text-xs text-muted-foreground">ID: {record.user_id}</div>
+        </div>
+        <Eye className="h-4 w-4 text-muted-foreground" />
+      </button>
+
+      {isTokenBan && record.context?.token_name && (
+        <code className="block rounded border bg-orange-50 px-2 py-1 text-[11px] text-orange-700 break-all dark:bg-orange-950/20 dark:text-orange-400">
+          {record.context.token_name}
+        </code>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {renderReasonBadge(record.reason)}
+        {record.context?.source && (
+          <Badge variant="secondary" className="text-[10px]">
+            {String(record.context.source).toUpperCase()}
+          </Badge>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MultiIpTokenMobileCard({
+  item,
+  expanded,
+  onToggle,
+  onDisable,
+  onOpenUser,
+}: {
+  item: MultiIPTokenItem
+  expanded: boolean
+  onToggle: () => void
+  onDisable: () => void
+  onOpenUser: () => void
+}) {
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" className="min-w-0 text-left" onClick={onToggle}>
+          <div className="truncate text-sm font-bold">{item.token_name || `Token#${item.token_id}`}</div>
+          <div className="text-[11px] text-muted-foreground">ID: {item.token_id}</div>
+        </button>
+        <Badge variant="destructive" className="shrink-0">{item.ip_count} IP</Badge>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <button type="button" onClick={onOpenUser} className="min-w-0 rounded-md bg-muted/40 px-3 py-2 text-left">
+          <div className="text-muted-foreground">所属用户</div>
+          <div className="mt-0.5 truncate font-semibold">{item.username || item.user_id}</div>
+        </button>
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          <div className="text-muted-foreground">请求总量</div>
+          <div className="mt-0.5 font-semibold tabular-nums text-primary">{formatNumber(item.request_count)}</div>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="space-y-2 rounded-lg border bg-muted/20 p-2">
+          {item.ips.map((ip) => (
+            <div key={ip.ip} className="flex items-center justify-between gap-2 rounded-md bg-background px-2 py-1.5 text-xs">
+              <code className="min-w-0 break-all font-mono">{ip.ip}</code>
+              <span className="shrink-0 font-semibold tabular-nums">{formatNumber(ip.request_count)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="outline" size="sm" onClick={onToggle}>
+          <ChevronDown className={cn("mr-1.5 h-3.5 w-3.5 transition-transform", expanded && "rotate-180")} />
+          IP 明细
+        </Button>
+        <Button variant="outline" size="sm" onClick={onDisable} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+          <Ban className="mr-1.5 h-3.5 w-3.5" />
+          禁用
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function MultiIpUserMobileCard({
+  item,
+  onOpenUser,
+  onOpenIps,
+  onBan,
+}: {
+  item: MultiIPUserItem
+  onOpenUser: () => void
+  onOpenIps: () => void
+  onBan: () => void
+}) {
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onOpenUser} className="min-w-0 text-left">
+          <div className="truncate text-sm font-bold">{item.username || item.user_id}</div>
+          <div className="text-[11px] text-muted-foreground">ID: {item.user_id}</div>
+        </button>
+        <button type="button" onClick={onOpenIps}>
+          <Badge variant="outline" className="bg-background text-blue-600">{item.ip_count} IP</Badge>
+        </button>
+      </div>
+
+      <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
+        <div className="text-muted-foreground">请求总量</div>
+        <div className="mt-0.5 text-base font-black tabular-nums text-blue-600">{formatNumber(item.request_count)}</div>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {item.top_ips.slice(0, 3).map((ip) => (
+          <code key={ip.ip} className="rounded border bg-muted/60 px-2 py-1 text-[11px] break-all">
+            {ip.ip}
+          </code>
+        ))}
+        {item.ip_count > 3 && (
+          <button type="button" className="rounded border border-primary/20 bg-primary/5 px-2 py-1 text-[11px] font-bold text-primary" onClick={onOpenIps}>
+            +{item.ip_count - 3}
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="outline" size="sm" onClick={onOpenUser}>
+          <Eye className="mr-1.5 h-3.5 w-3.5" />
+          分析
+        </Button>
+        <Button variant="outline" size="sm" onClick={onBan} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+          <ShieldBan className="mr-1.5 h-3.5 w-3.5" />
+          封禁
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AiSuspiciousUserMobileCard({
+  user,
+  assessing,
+  enabled,
+  onOpen,
+  onAssess,
+}: {
+  user: AiSuspiciousUserItem
+  assessing: boolean
+  enabled: boolean
+  onOpen: () => void
+  onAssess: () => void
+}) {
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-sm font-bold text-slate-600">
+          {user.username[0]?.toUpperCase() || 'U'}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-slate-900">{user.username}</div>
+          <div className="text-xs text-slate-500">ID: {user.user_id}</div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {user.risk_flags.map((flag) => (
+          <Badge key={flag} variant="destructive" className="rounded px-2 py-0.5 text-[11px]">
+            {RISK_FLAG_LABELS[flag] || flag}
+          </Badge>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-md bg-slate-50 px-3 py-2">
+          <div className="text-slate-500">RPM</div>
+          <div className="mt-0.5 font-mono font-semibold">{user.rpm}</div>
+        </div>
+        <div className="rounded-md bg-slate-50 px-3 py-2">
+          <div className="text-slate-500">请求数</div>
+          <div className="mt-0.5 font-mono font-semibold">{formatNumber(user.total_requests)}</div>
+        </div>
+        <div className="rounded-md bg-slate-50 px-3 py-2">
+          <div className="text-slate-500">空回复率</div>
+          <div className={cn("mt-0.5 font-mono font-semibold", user.empty_rate >= 80 && "text-rose-600")}>{user.empty_rate}%</div>
+        </div>
+        <div className="rounded-md bg-slate-50 px-3 py-2">
+          <div className="text-slate-500">IP 数</div>
+          <div className="mt-0.5 font-mono font-semibold">{user.unique_ips}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="outline" size="sm" onClick={onOpen}>
+          <Eye className="mr-1.5 h-3.5 w-3.5" />
+          分析
+        </Button>
+        <Button variant="outline" size="sm" onClick={onAssess} disabled={assessing || !enabled} className="text-rose-600 hover:bg-rose-50 hover:text-rose-700">
+          {assessing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ShieldBan className="mr-1.5 h-3.5 w-3.5" />}
+          AI 评估
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AiAuditLogMobileCard({ log, onOpen }: { log: AiAuditLogItem; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} className="block w-full space-y-3 p-4 text-left">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate font-mono text-xs text-slate-500">{log.scan_id}</div>
+          <div className="mt-1 text-xs text-slate-500">{new Date(log.created_at * 1000).toLocaleString('zh-CN')}</div>
+        </div>
+        <Badge variant={log.dry_run ? 'secondary' : 'default'} className="shrink-0 text-xs">
+          {log.dry_run ? '试运行' : '正式'}
+        </Badge>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2 text-center text-xs">
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <div className="font-semibold">{log.total_scanned}</div>
+          <div className="text-[10px] text-slate-500">扫描</div>
+        </div>
+        <div className="rounded bg-red-50 px-2 py-1.5 text-red-600">
+          <div className="font-semibold">{log.banned_count}</div>
+          <div className="text-[10px]">封禁</div>
+        </div>
+        <div className="rounded bg-amber-50 px-2 py-1.5 text-amber-600">
+          <div className="font-semibold">{log.warned_count}</div>
+          <div className="text-[10px]">告警</div>
+        </div>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <div className="font-semibold">{log.error_count}</div>
+          <div className="text-[10px] text-slate-500">错误</div>
+        </div>
+      </div>
+
+      {log.error_message && (
+        <div className="rounded border border-red-100 bg-red-50 px-2 py-1.5 text-xs text-red-600 line-clamp-2">
+          {log.error_message}
+        </div>
+      )}
+    </button>
+  )
+}
+
 export function RealtimeRanking() {
   const { token } = useAuth()
   const { showToast } = useToast()
@@ -1519,11 +1898,11 @@ export function RealtimeRanking() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="min-w-0 space-y-4 overflow-hidden animate-in fade-in duration-500 sm:space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-3xl font-bold tracking-tight">风控中心</h2>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">风控中心</h2>
             <Badge variant="outline" className="animate-pulse border-green-500 text-green-600 bg-green-50 dark:bg-green-950/20">
               <div className="w-2 h-2 rounded-full bg-green-500 mr-2" />
               {view === 'leaderboards' ? '实时流量监控' :
@@ -1531,12 +1910,12 @@ export function RealtimeRanking() {
                   view === 'banned_list' ? '策略生效中' : '系统运行中'}
             </Badge>
           </div>
-          <p className="text-muted-foreground mt-1">
+          <p className="mt-1 text-sm text-muted-foreground sm:text-base">
             实时 Top 10 · 深度分析 · 快速封禁
             {systemScale && <span className="ml-2 text-xs opacity-70">({systemScale})</span>}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
           {view === 'leaderboards' && (
             <>
               <div className="relative" ref={dropdownRef}>
@@ -1544,7 +1923,7 @@ export function RealtimeRanking() {
                   variant="outline"
                   size="sm"
                   onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
-                  className="h-9 min-w-[100px]"
+                  className="h-9 w-full justify-between sm:min-w-[100px]"
                 >
                   <Timer className="h-4 w-4 mr-2" />
                   {refreshInterval > 0 ? (
@@ -1558,7 +1937,7 @@ export function RealtimeRanking() {
                 </Button>
 
                 {showIntervalDropdown && (
-                  <div className="absolute right-0 mt-1 w-48 bg-popover border rounded-md shadow-lg z-50">
+                  <div className="absolute right-0 mt-1 w-48 max-w-[calc(100vw-2rem)] bg-popover border rounded-md shadow-lg z-50">
                     <div className="p-2 border-b">
                       <p className="text-xs text-muted-foreground">刷新间隔</p>
                     </div>
@@ -1582,7 +1961,7 @@ export function RealtimeRanking() {
                   </div>
                 )}
               </div>
-              <div className="w-40">
+              <div className="w-full sm:w-40">
                 <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}>
                   <option value="requests">按请求次数</option>
                   <option value="quota">按额度消耗</option>
@@ -1592,13 +1971,13 @@ export function RealtimeRanking() {
             </>
           )}
           {view === 'leaderboards' && (
-            <Button variant="outline" size="sm" onClick={() => handleRefresh()} disabled={refreshing !== null} className="h-9">
+            <Button variant="outline" size="sm" onClick={() => handleRefresh()} disabled={refreshing !== null} className="h-9 w-full sm:w-auto">
               <RefreshCw className={cn("h-4 w-4 mr-2", refreshing === 'all' && "animate-spin")} />
               刷新全部
             </Button>
           )}
           {view === 'audit_logs' && (
-            <Button variant="outline" size="sm" onClick={handleRefreshRecords} disabled={recordsRefreshing} className="h-9">
+            <Button variant="outline" size="sm" onClick={handleRefreshRecords} disabled={recordsRefreshing} className="h-9 w-full sm:w-auto">
               <RefreshCw className={cn("h-4 w-4 mr-2", recordsRefreshing && "animate-spin")} />
               刷新
             </Button>
@@ -1606,8 +1985,8 @@ export function RealtimeRanking() {
         </div>
       </div>
 
-      <div className="relative">
-        <div className="relative inline-flex h-10 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground">
+      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+        <div className="relative inline-flex h-10 min-w-max items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground">
           <div
             className="absolute inset-y-1 bg-background rounded-md shadow-sm transition-all duration-300 ease-out"
             style={{
@@ -1623,7 +2002,7 @@ export function RealtimeRanking() {
               ref={el => { tabsRef.current[index] = el }}
               onClick={() => setView(id)}
               className={cn(
-                "relative z-10 inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                "relative z-10 inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 sm:gap-2 sm:px-3",
                 view === id
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground/80"
@@ -1910,7 +2289,58 @@ export function RealtimeRanking() {
                 </div>
               ) : (
                 <>
-                  <div className="overflow-auto">
+                  {bannedUsers.length ? (
+                    <div className="divide-y md:hidden">
+                      {bannedUsers.map((user) => {
+                        const openBannedUser = () => {
+                          const mockItem: LeaderboardItem = {
+                            user_id: user.id,
+                            username: user.username,
+                            user_status: 2,
+                            request_count: user.request_count,
+                            failure_requests: 0,
+                            failure_rate: 0,
+                            quota_used: user.used_quota,
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                            unique_ips: 0,
+                          }
+                          openUserDialog(mockItem, '24h', user.banned_at || undefined)
+                        }
+                        return (
+                          <BannedUserMobileCard
+                            key={user.id}
+                            user={user}
+                            mutating={mutating}
+                            onOpen={openBannedUser}
+                            onUnban={() => {
+                              setBanConfirmDialog({
+                                open: true,
+                                type: 'unban',
+                                userId: user.id,
+                                username: user.username,
+                                displayName: user.display_name || undefined,
+                                reason: '',
+                                disableTokens: false,
+                                enableTokens: true,
+                              })
+                            }}
+                          />
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex h-64 flex-col items-center justify-center gap-3 text-center md:hidden">
+                      <ShieldCheck className="h-10 w-10 text-muted-foreground/30" />
+                      <div>
+                        <h3 className="font-semibold text-foreground">暂无封禁记录</h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {bannedSearch ? '未找到匹配的用户' : '当前系统运行正常'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="hidden overflow-auto md:block">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/30 hover:bg-muted/30 border-b">
@@ -2176,7 +2606,34 @@ export function RealtimeRanking() {
                 </div>
               ) : (
                 <>
-                  <div className="overflow-auto">
+                  {records.length ? (
+                    <div className="divide-y md:hidden">
+                      {records.map((r) => {
+                        const openRecordUser = () => {
+                          const mockItem: LeaderboardItem = {
+                            user_id: r.user_id,
+                            username: r.username,
+                            user_status: r.action === 'ban' ? 2 : 1,
+                            request_count: 0,
+                            failure_requests: 0,
+                            failure_rate: 0,
+                            quota_used: 0,
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                            unique_ips: 0,
+                          }
+                          openUserDialog(mockItem, '24h')
+                        }
+                        return <AuditRecordMobileCard key={r.id} record={r} onOpen={openRecordUser} />
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex h-40 flex-col items-center justify-center gap-2 text-center text-muted-foreground md:hidden">
+                      <Activity className="h-8 w-8 opacity-20" />
+                      <span>暂无审计日志</span>
+                    </div>
+                  )}
+                  <div className="hidden overflow-auto md:block">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/30 hover:bg-muted/30 border-b">
@@ -2443,21 +2900,21 @@ export function RealtimeRanking() {
       {view === 'ip_monitoring' && (
         <div className="mt-4">
           <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
               <div className="flex items-center gap-3">
-                <Select value={ipWindow} onChange={(e) => setIpWindow(e.target.value as WindowKey)} className="w-32 h-9">
+                <Select value={ipWindow} onChange={(e) => setIpWindow(e.target.value as WindowKey)} className="h-9 w-full sm:w-32">
                   {allWindows.map((w) => (
                     <option key={w} value={w}>{WINDOW_LABELS[w]}</option>
                   ))}
                 </Select>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <div className="relative" ref={dropdownRef}>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
-                    className="h-9 min-w-[100px]"
+                    className="h-9 w-full justify-between sm:min-w-[100px]"
                   >
                     <Timer className="h-4 w-4 mr-2" />
                     {ipRefreshInterval > 0 ? (
@@ -2471,7 +2928,7 @@ export function RealtimeRanking() {
                   </Button>
 
                   {showIntervalDropdown && (
-                    <div className="absolute right-0 mt-1 w-48 bg-popover border rounded-md shadow-lg z-50">
+                    <div className="absolute right-0 mt-1 w-48 max-w-[calc(100vw-2rem)] bg-popover border rounded-md shadow-lg z-50">
                       <div className="p-2 border-b">
                         <p className="text-xs text-muted-foreground">刷新间隔</p>
                       </div>
@@ -2495,7 +2952,7 @@ export function RealtimeRanking() {
                     </div>
                   )}
                 </div>
-                <Button variant="outline" size="sm" onClick={handleRefreshIP} disabled={ipRefreshing.all} className="h-9">
+                <Button variant="outline" size="sm" onClick={handleRefreshIP} disabled={ipRefreshing.all} className="h-9 w-full sm:w-auto">
                   <RefreshCw className={cn("h-4 w-4 mr-2", ipRefreshing.all && "animate-spin")} />
                   全部刷新
                 </Button>
@@ -2615,11 +3072,11 @@ export function RealtimeRanking() {
                           {sharedIps.slice((ipPage.shared - 1) * ipPageSize, ipPage.shared * ipPageSize).map((item) => (
                             <div key={item.ip} className="px-4 py-3 transition-colors hover:bg-muted/30">
                               <div
-                                className="flex items-center justify-between cursor-pointer"
+                                className="flex cursor-pointer flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                                 onClick={() => toggleSharedIpExpand(item.ip)}
                               >
-                                <div className="flex items-center gap-3">
-                                  <code className="text-sm bg-muted px-2 py-1 rounded font-mono text-foreground border border-border/50">{item.ip}</code>
+                                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                                  <code className="break-all rounded border border-border/50 bg-muted px-2 py-1 font-mono text-sm text-foreground">{item.ip}</code>
                                   {isCloudflareIp(item.ip) && (
                                     <Badge className="bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 px-1.5 py-0 text-[10px] font-bold">CF</Badge>
                                   )}
@@ -2628,8 +3085,8 @@ export function RealtimeRanking() {
                                     <Badge variant="outline" className="font-normal bg-background">{item.user_count} 用户</Badge>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <div className="flex flex-col items-end">
+                                <div className="flex items-center justify-between gap-2 sm:justify-end">
+                                  <div className="flex flex-col items-start sm:items-end">
                                     <span className="text-sm font-bold tabular-nums font-mono text-foreground">
                                       {formatNumber(item.request_count)}
                                     </span>
@@ -2641,11 +3098,11 @@ export function RealtimeRanking() {
                                 </div>
                               </div>
                               {expandedSharedIps.has(item.ip) && (
-                                <div className="mt-3 pl-4 space-y-2 animate-in slide-in-from-top-1 duration-200">
+                                <div className="mt-3 space-y-2 animate-in slide-in-from-top-1 duration-200 sm:pl-4">
                                   {item.tokens.map((t) => (
-                                    <div key={t.token_id} className="flex items-center justify-between text-sm bg-muted/40 rounded-lg px-3 py-2 border border-border/40">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-semibold text-primary/80">{t.token_name || `Token#${t.token_id}`}</span>
+                                    <div key={t.token_id} className="flex flex-col gap-2 rounded-lg border border-border/40 bg-muted/40 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <span className="break-all font-semibold text-primary/80">{t.token_name || `Token#${t.token_id}`}</span>
                                         <div
                                           className="flex items-center gap-2 px-2 py-1 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all cursor-pointer border border-transparent hover:border-primary/20 w-fit group/user"
                                           onClick={(e) => {
@@ -2656,7 +3113,7 @@ export function RealtimeRanking() {
                                           <div className="w-4 h-4 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold text-[10px] border border-blue-500/20 group-hover/user:bg-blue-500/20">
                                             {t.username[0]?.toUpperCase()}
                                           </div>
-                                          <span className="text-xs font-semibold whitespace-nowrap">{t.username || t.user_id}</span>
+                                          <span className="truncate text-xs font-semibold">{t.username || t.user_id}</span>
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-1.5 opacity-80">
@@ -2715,6 +3172,19 @@ export function RealtimeRanking() {
                   <CardContent className="p-0">
                     {multiIpTokens.length > 0 ? (
                       <>
+                        <div className="divide-y md:hidden">
+                          {multiIpTokens.slice((ipPage.tokens - 1) * ipPageSize, ipPage.tokens * ipPageSize).map((item) => (
+                            <MultiIpTokenMobileCard
+                              key={item.token_id}
+                              item={item}
+                              expanded={expandedTokens.has(item.token_id)}
+                              onToggle={() => toggleTokenExpand(item.token_id)}
+                              onDisable={() => handleDisableToken(item.token_id, item.token_name || `Token#${item.token_id}`)}
+                              onOpenUser={() => openUserAnalysisFromIP(item.user_id, item.username)}
+                            />
+                          ))}
+                        </div>
+                        <div className="hidden md:block">
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
@@ -2820,8 +3290,9 @@ export function RealtimeRanking() {
                             ))}
                           </TableBody>
                         </Table>
+                        </div>
                         {multiIpTokens.length > ipPageSize && (
-                          <div className="flex items-center justify-between p-3 border-t bg-muted/5">
+                          <div className="flex flex-col gap-2 border-t bg-muted/5 p-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="text-[11px] text-muted-foreground font-medium opacity-70">
                               第 {ipPage.tokens} / {Math.ceil(multiIpTokens.length / ipPageSize)} 页 · 共 {multiIpTokens.length} 条
                             </div>
@@ -2865,6 +3336,18 @@ export function RealtimeRanking() {
                   <CardContent className="p-0">
                     {multiIpUsers.length > 0 ? (
                       <>
+                        <div className="divide-y md:hidden">
+                          {multiIpUsers.slice((ipPage.users - 1) * ipPageSize, ipPage.users * ipPageSize).map((item) => (
+                            <MultiIpUserMobileCard
+                              key={item.user_id}
+                              item={item}
+                              onOpenUser={() => openUserAnalysisFromIP(item.user_id, item.username)}
+                              onOpenIps={() => openUserIpsDialog(item.user_id, item.username)}
+                              onBan={() => handleQuickBanUser(item.user_id, item.username || `User#${item.user_id}`)}
+                            />
+                          ))}
+                        </div>
+                        <div className="hidden md:block">
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
@@ -2958,8 +3441,9 @@ export function RealtimeRanking() {
                             ))}
                           </TableBody>
                         </Table>
+                        </div>
                         {multiIpUsers.length > ipPageSize && (
-                          <div className="flex items-center justify-between p-3 border-t bg-muted/5">
+                          <div className="flex flex-col gap-2 border-t bg-muted/5 p-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="text-[11px] text-muted-foreground font-medium opacity-70">
                               第 {ipPage.users} / {Math.ceil(multiIpUsers.length / ipPageSize)} 页 · 共 {multiIpUsers.length} 条
                             </div>
@@ -3046,14 +3530,14 @@ export function RealtimeRanking() {
 
           {/* API 健康状态警告 */}
           {aiConfig?.api_health?.suspended && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="font-semibold text-amber-800">API 服务已暂停</p>
-                  <p className="text-sm text-amber-600">
+                  <p className="break-words text-sm text-amber-600">
                     连续失败 {aiConfig.api_health.consecutive_failures} 次
                     {aiConfig.api_health.cooldown_remaining > 0 && (
                       <span>，剩余冷却时间 {aiConfig.api_health.cooldown_remaining} 秒</span>
@@ -3068,7 +3552,7 @@ export function RealtimeRanking() {
                 variant="outline"
                 size="sm"
                 onClick={handleResetApiHealth}
-                className="border-amber-300 text-amber-700 hover:bg-amber-100"
+                className="w-full border-amber-300 text-amber-700 hover:bg-amber-100 sm:w-auto"
               >
                 <RefreshCw className="w-4 h-4 mr-1" />
                 手动恢复
@@ -3078,13 +3562,13 @@ export function RealtimeRanking() {
 
           {/* API 连续失败警告（未暂停但有失败） */}
           {aiConfig?.api_health && !aiConfig.api_health.suspended && aiConfig.api_health.consecutive_failures > 0 && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
               <div className="w-10 h-10 rounded-lg bg-yellow-100 text-yellow-600 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="font-semibold text-yellow-800">API 调用异常</p>
-                <p className="text-sm text-yellow-600">
+                <p className="break-words text-sm text-yellow-600">
                   最近连续失败 {aiConfig.api_health.consecutive_failures} 次
                   {aiConfig.api_health.last_error && (
                     <span className="block mt-1 text-xs">错误: {aiConfig.api_health.last_error}</span>
@@ -3337,14 +3821,14 @@ export function RealtimeRanking() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
+            <div className="grid w-full shrink-0 grid-cols-1 gap-2 sm:grid-cols-3 md:flex md:w-auto md:items-center md:gap-3">
               <Button
                 variant="outline"
                 onClick={() => {
                   setWhitelistModalOpen(true)
                   fetchWhitelist()
                 }}
-                className="bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                className="w-full bg-white border-slate-200 text-slate-700 hover:bg-slate-50 md:w-auto"
               >
                 <ShieldCheck className="h-4 w-4 mr-2" />
                 白名单 ({aiConfig?.whitelist_count || 0})
@@ -3353,7 +3837,7 @@ export function RealtimeRanking() {
                 variant="outline"
                 onClick={() => fetchAiSuspiciousUsers(true)}
                 disabled={aiLoading}
-                className="bg-white border-blue-200 text-blue-700 hover:bg-blue-50 flex-1 md:flex-none"
+                className="w-full bg-white border-blue-200 text-blue-700 hover:bg-blue-50 md:w-auto md:flex-none"
               >
                 <RefreshCw className={cn("h-4 w-4 mr-2", aiLoading && "animate-spin")} />
                 刷新列表
@@ -3361,7 +3845,7 @@ export function RealtimeRanking() {
               <Button
                 onClick={handleAiScan}
                 disabled={!aiConfig?.enabled || aiScanning}
-                className="bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 flex-1 md:flex-none"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 md:w-auto md:flex-none"
               >
                 {aiScanning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Activity className="h-4 w-4 mr-2" />}
                 执行 AI 扫描
@@ -3374,101 +3858,131 @@ export function RealtimeRanking() {
             <CardHeader className="px-6 py-4 border-b border-slate-100 bg-white">
               <h3 className="font-bold text-lg text-slate-800">可疑用户列表</h3>
             </CardHeader>
-            <div className="bg-white overflow-x-auto">
+            <div className="bg-white">
               {aiLoading ? (
                 <div className="h-64 flex items-center justify-center text-muted-foreground">
                   <Loader2 className="h-8 w-8 animate-spin text-blue-500/50" />
                 </div>
               ) : aiSuspiciousUsers.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50/50 hover:bg-slate-50/50 border-b border-slate-100">
-                      <TableHead className="w-[180px] font-semibold text-slate-600">用户</TableHead>
-                      <TableHead className="font-semibold text-slate-600">风险标签</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600">RPM</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600">请求数</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600">空回复率</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600">IP 数</TableHead>
-                      <TableHead className="text-center font-semibold text-slate-600 w-[120px]">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <>
+                  <div className="divide-y divide-slate-100 md:hidden">
                     {aiSuspiciousUsers.map((user) => (
-                      <TableRow key={user.user_id} className="hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors">
-                        <TableCell className="py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm border border-slate-200">
-                              {user.username[0]?.toUpperCase() || 'U'}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-slate-900 text-sm">{user.username}</span>
-                              <span className="text-xs text-slate-500">ID: {user.user_id}</span>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4">
-                          <div className="flex flex-wrap gap-1.5">
-                            {user.risk_flags.map((flag) => (
-                              <Badge key={flag} variant="destructive" className="rounded px-2 py-0.5 text-[11px] font-medium border-0 opacity-90">
-                                {RISK_FLAG_LABELS[flag] || flag}
-                              </Badge>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4 text-right font-mono text-sm text-slate-600">{user.rpm}</TableCell>
-                        <TableCell className="py-4 text-right font-mono text-sm text-slate-600">{formatNumber(user.total_requests)}</TableCell>
-                        <TableCell className="py-4 text-right">
-                          <span className={cn(
-                            "font-mono text-sm",
-                            user.empty_rate >= 80 ? "text-rose-600 font-bold" : "text-slate-600"
-                          )}>
-                            {user.empty_rate}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="py-4 text-right font-mono text-sm text-slate-600">{user.unique_ips}</TableCell>
-                        <TableCell className="py-4">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                              onClick={() => {
-                                const mockItem: LeaderboardItem = {
-                                  user_id: user.user_id,
-                                  username: user.username,
-                                  user_status: 1,
-                                  request_count: user.total_requests,
-                                  failure_requests: 0,
-                                  failure_rate: user.failure_rate / 100,
-                                  quota_used: 0,
-                                  prompt_tokens: 0,
-                                  completion_tokens: 0,
-                                  unique_ips: user.unique_ips,
-                                }
-                                openUserDialog(mockItem, '1h')
-                              }}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                              onClick={() => handleAiAssess(user.user_id)}
-                              disabled={aiAssessing === user.user_id || !aiConfig?.enabled}
-                            >
-                              {aiAssessing === user.user_id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <ShieldBan className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                      <AiSuspiciousUserMobileCard
+                        key={user.user_id}
+                        user={user}
+                        assessing={aiAssessing === user.user_id}
+                        enabled={!!aiConfig?.enabled}
+                        onOpen={() => {
+                          const mockItem: LeaderboardItem = {
+                            user_id: user.user_id,
+                            username: user.username,
+                            user_status: 1,
+                            request_count: user.total_requests,
+                            failure_requests: 0,
+                            failure_rate: user.failure_rate / 100,
+                            quota_used: 0,
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                            unique_ips: user.unique_ips,
+                          }
+                          openUserDialog(mockItem, '1h')
+                        }}
+                        onAssess={() => handleAiAssess(user.user_id)}
+                      />
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50/50 hover:bg-slate-50/50 border-b border-slate-100">
+                          <TableHead className="w-[180px] font-semibold text-slate-600">用户</TableHead>
+                          <TableHead className="font-semibold text-slate-600">风险标签</TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600">RPM</TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600">请求数</TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600">空回复率</TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600">IP 数</TableHead>
+                          <TableHead className="text-center font-semibold text-slate-600 w-[120px]">操作</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {aiSuspiciousUsers.map((user) => (
+                          <TableRow key={user.user_id} className="hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors">
+                            <TableCell className="py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm border border-slate-200">
+                                  {user.username[0]?.toUpperCase() || 'U'}
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="font-semibold text-slate-900 text-sm">{user.username}</span>
+                                  <span className="text-xs text-slate-500">ID: {user.user_id}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="flex flex-wrap gap-1.5">
+                                {user.risk_flags.map((flag) => (
+                                  <Badge key={flag} variant="destructive" className="rounded px-2 py-0.5 text-[11px] font-medium border-0 opacity-90">
+                                    {RISK_FLAG_LABELS[flag] || flag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4 text-right font-mono text-sm text-slate-600">{user.rpm}</TableCell>
+                            <TableCell className="py-4 text-right font-mono text-sm text-slate-600">{formatNumber(user.total_requests)}</TableCell>
+                            <TableCell className="py-4 text-right">
+                              <span className={cn(
+                                "font-mono text-sm",
+                                user.empty_rate >= 80 ? "text-rose-600 font-bold" : "text-slate-600"
+                              )}>
+                                {user.empty_rate}%
+                              </span>
+                            </TableCell>
+                            <TableCell className="py-4 text-right font-mono text-sm text-slate-600">{user.unique_ips}</TableCell>
+                            <TableCell className="py-4">
+                              <div className="flex items-center justify-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                  onClick={() => {
+                                    const mockItem: LeaderboardItem = {
+                                      user_id: user.user_id,
+                                      username: user.username,
+                                      user_status: 1,
+                                      request_count: user.total_requests,
+                                      failure_requests: 0,
+                                      failure_rate: user.failure_rate / 100,
+                                      quota_used: 0,
+                                      prompt_tokens: 0,
+                                      completion_tokens: 0,
+                                      unique_ips: user.unique_ips,
+                                    }
+                                    openUserDialog(mockItem, '1h')
+                                  }}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                                  onClick={() => handleAiAssess(user.user_id)}
+                                  disabled={aiAssessing === user.user_id || !aiConfig?.enabled}
+                                >
+                                  {aiAssessing === user.user_id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <ShieldBan className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               ) : (
                 <div className="h-64 flex flex-col items-center justify-center text-muted-foreground bg-slate-50/30">
                   <ShieldCheck className="h-12 w-12 mb-3 text-emerald-500/20" />
@@ -3494,12 +4008,12 @@ export function RealtimeRanking() {
                 </div>
               </CardHeader>
               <CardContent className="p-4 space-y-4">
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
                   <div className="text-sm text-muted-foreground">用户:</div>
-                  <div className="font-medium">{aiAssessResult.username} (ID: {aiAssessResult.user_id})</div>
+                  <div className="break-all font-medium">{aiAssessResult.username} (ID: {aiAssessResult.user_id})</div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                   <div className="rounded-lg border p-3 text-center">
                     <div className={cn(
                       "text-2xl font-bold",
@@ -3540,6 +4054,7 @@ export function RealtimeRanking() {
                     <Button
                       variant="destructive"
                       size="sm"
+                      className="w-full sm:w-auto"
                       onClick={() => {
                         setBanConfirmDialog({
                           open: true,
@@ -3563,16 +4078,16 @@ export function RealtimeRanking() {
 
           {/* AI 审查记录 */}
           <Card className="rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <CardHeader className="px-6 py-4 border-b border-slate-100 bg-white flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-col gap-3 border-b border-slate-100 bg-white px-4 py-4 sm:px-6 md:flex-row md:items-center md:justify-between">
               <h3 className="font-bold text-lg text-slate-800">审查记录</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-500 mr-2">共 {aiAuditLogsTotal} 条</span>
+              <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
+                <span className="text-sm text-slate-500 md:mr-2">共 {aiAuditLogsTotal} 条</span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleClearAuditLogs}
                   disabled={aiAuditLogsLoading || aiAuditLogsTotal === 0}
-                  className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                  className="h-8 flex-1 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 sm:flex-none"
                 >
                   <Ban className="h-4 w-4 mr-1.5" />
                   清空
@@ -3582,109 +4097,120 @@ export function RealtimeRanking() {
                   size="sm"
                   onClick={() => fetchAiAuditLogs(true)}
                   disabled={aiAuditLogsLoading}
-                  className="h-8"
+                  className="h-8 flex-1 sm:flex-none"
                 >
                   {aiAuditLogsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 </Button>
               </div>
             </CardHeader>
-            <div className="bg-white overflow-x-auto">
+            <div className="bg-white">
               {aiAuditLogs.length > 0 ? (
                 <>
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-slate-50/50 hover:bg-slate-50/50">
-                        <TableHead className="font-bold text-slate-600 w-[100px]">扫描ID</TableHead>
-                        <TableHead className="font-bold text-slate-600 w-[100px]">状态</TableHead>
-                        <TableHead className="font-bold text-slate-600 w-[100px]">模式</TableHead>
-                        <TableHead className="font-bold text-slate-600 text-center">扫描</TableHead>
-                        <TableHead className="font-bold text-slate-600 text-center">封禁</TableHead>
-                        <TableHead className="font-bold text-slate-600 text-center">告警</TableHead>
-                        <TableHead className="font-bold text-slate-600 text-center">错误</TableHead>
-                        <TableHead className="font-bold text-slate-600 w-[100px]">耗时</TableHead>
-                        <TableHead className="font-bold text-slate-600 w-[180px]">时间</TableHead>
-                        <TableHead className="font-bold text-slate-600">错误信息</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {aiAuditLogs.map((log) => (
-                        <TableRow
-                          key={log.id}
-                          className="hover:bg-slate-50/50 cursor-pointer"
-                          onClick={() => setSelectedAuditLog(log)}
-                        >
-                          <TableCell className="font-mono text-xs text-slate-500">{log.scan_id}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                log.status === 'success' ? 'success' :
-                                  log.status === 'partial' ? 'warning' :
-                                    log.status === 'failed' ? 'destructive' :
-                                      log.status === 'empty' ? 'secondary' :
-                                        log.status === 'suspended' ? 'destructive' :
-                                          'outline'
-                              }
-                              className="text-xs whitespace-nowrap"
-                            >
-                              {log.status === 'success' ? '成功' :
-                                log.status === 'partial' ? '部分成功' :
-                                  log.status === 'failed' ? '失败' :
-                                    log.status === 'empty' ? '无数据' :
-                                      log.status === 'suspended' ? '已暂停' :
-                                        log.status === 'skipped' ? '跳过' : log.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={log.dry_run ? 'secondary' : 'default'} className="text-xs whitespace-nowrap">
-                              {log.dry_run ? '试运行' : '正式'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-center font-mono">{log.total_scanned}</TableCell>
-                          <TableCell className="text-center">
-                            {log.banned_count > 0 ? (
-                              <span className="font-bold text-red-600">{log.banned_count}</span>
-                            ) : (
-                              <span className="text-slate-400">0</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {log.warned_count > 0 ? (
-                              <span className="font-bold text-amber-600">{log.warned_count}</span>
-                            ) : (
-                              <span className="text-slate-400">0</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {log.error_count > 0 ? (
-                              <span className="font-bold text-red-600">{log.error_count}</span>
-                            ) : (
-                              <span className="text-slate-400">0</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{log.elapsed_seconds}s</TableCell>
-                          <TableCell className="text-xs text-slate-500">
-                            {new Date(log.created_at * 1000).toLocaleString('zh-CN')}
-                          </TableCell>
-                          <TableCell className="max-w-[200px]">
-                            {log.error_message ? (
-                              <span className="text-xs text-red-600 truncate block" title={log.error_message}>
-                                {log.error_message}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </TableCell>
+                  <div className="divide-y divide-slate-100 md:hidden">
+                    {aiAuditLogs.map((log) => (
+                      <AiAuditLogMobileCard
+                        key={log.id}
+                        log={log}
+                        onOpen={() => setSelectedAuditLog(log)}
+                      />
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50/50 hover:bg-slate-50/50">
+                          <TableHead className="font-bold text-slate-600 w-[100px]">扫描ID</TableHead>
+                          <TableHead className="font-bold text-slate-600 w-[100px]">状态</TableHead>
+                          <TableHead className="font-bold text-slate-600 w-[100px]">模式</TableHead>
+                          <TableHead className="font-bold text-slate-600 text-center">扫描</TableHead>
+                          <TableHead className="font-bold text-slate-600 text-center">封禁</TableHead>
+                          <TableHead className="font-bold text-slate-600 text-center">告警</TableHead>
+                          <TableHead className="font-bold text-slate-600 text-center">错误</TableHead>
+                          <TableHead className="font-bold text-slate-600 w-[100px]">耗时</TableHead>
+                          <TableHead className="font-bold text-slate-600 w-[180px]">时间</TableHead>
+                          <TableHead className="font-bold text-slate-600">错误信息</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {aiAuditLogs.map((log) => (
+                          <TableRow
+                            key={log.id}
+                            className="hover:bg-slate-50/50 cursor-pointer"
+                            onClick={() => setSelectedAuditLog(log)}
+                          >
+                            <TableCell className="font-mono text-xs text-slate-500">{log.scan_id}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  log.status === 'success' ? 'success' :
+                                    log.status === 'partial' ? 'warning' :
+                                      log.status === 'failed' ? 'destructive' :
+                                        log.status === 'empty' ? 'secondary' :
+                                          log.status === 'suspended' ? 'destructive' :
+                                            'outline'
+                                }
+                                className="text-xs whitespace-nowrap"
+                              >
+                                {log.status === 'success' ? '成功' :
+                                  log.status === 'partial' ? '部分成功' :
+                                    log.status === 'failed' ? '失败' :
+                                      log.status === 'empty' ? '无数据' :
+                                        log.status === 'suspended' ? '已暂停' :
+                                          log.status === 'skipped' ? '跳过' : log.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={log.dry_run ? 'secondary' : 'default'} className="text-xs whitespace-nowrap">
+                                {log.dry_run ? '试运行' : '正式'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-center font-mono">{log.total_scanned}</TableCell>
+                            <TableCell className="text-center">
+                              {log.banned_count > 0 ? (
+                                <span className="font-bold text-red-600">{log.banned_count}</span>
+                              ) : (
+                                <span className="text-slate-400">0</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {log.warned_count > 0 ? (
+                                <span className="font-bold text-amber-600">{log.warned_count}</span>
+                              ) : (
+                                <span className="text-slate-400">0</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {log.error_count > 0 ? (
+                                <span className="font-bold text-red-600">{log.error_count}</span>
+                              ) : (
+                                <span className="text-slate-400">0</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">{log.elapsed_seconds}s</TableCell>
+                            <TableCell className="text-xs text-slate-500">
+                              {new Date(log.created_at * 1000).toLocaleString('zh-CN')}
+                            </TableCell>
+                            <TableCell className="max-w-[200px]">
+                              {log.error_message ? (
+                                <span className="text-xs text-red-600 truncate block" title={log.error_message}>
+                                  {log.error_message}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
 
                   {/* 分页控件 */}
-                  <div className="px-4 py-3 border-t flex items-center justify-between bg-slate-50/30">
+                  <div className="flex flex-col gap-2 border-t bg-slate-50/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="text-xs text-slate-500">
                       显示 {(aiAuditLogsPage - 1) * aiAuditLogsLimit + 1} - {Math.min(aiAuditLogsPage * aiAuditLogsLimit, aiAuditLogsTotal)} 共 {aiAuditLogsTotal} 条
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex items-center justify-end gap-2">
                       <Button
                         variant="outline"
                         size="sm"

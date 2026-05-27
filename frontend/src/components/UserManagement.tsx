@@ -592,6 +592,29 @@ export function UserManagement() {
     setInvitedPage(1)
   }
 
+  const handleLinuxDoLookup = useCallback(async (linuxDoId: string) => {
+    if (!linuxDoId || linuxDoLookupLoading) return
+    setLinuxDoLookupLoading(linuxDoId)
+    try {
+      const res = await fetch(`${apiUrl}/api/linuxdo/lookup/${encodeURIComponent(linuxDoId)}`, { headers: getAuthHeaders() })
+      const data = await res.json()
+      if (data.success && data.data?.profile_url) {
+        window.open(data.data.profile_url, '_blank')
+      } else if (data.error_type === 'rate_limit') {
+        showToast('error', data.message || `请求被限速，请等待 ${data.wait_seconds || '?'} 秒后重试`)
+      } else if (data.fallback_url) {
+        window.open(data.fallback_url, '_blank')
+        showToast('info', '服务器查询失败，已在新标签页打开 Linux.do 证书页面')
+      } else {
+        showToast('error', data.message || '查询 Linux.do 用户名失败')
+      }
+    } catch {
+      showToast('error', '查询 Linux.do 用户名失败')
+    } finally {
+      setLinuxDoLookupLoading(null)
+    }
+  }, [apiUrl, getAuthHeaders, linuxDoLookupLoading, showToast])
+
   // 获取邀请用户列表
   const fetchInvitedUsers = useCallback(async () => {
     if (!selectedUser || !analysisDialogOpen) return
@@ -850,14 +873,14 @@ export function UserManagement() {
       {/* Search and Filter */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <CardTitle className="text-base font-medium flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <Search className="w-4 h-4" />
               用户列表
               <span className="ml-2 text-sm font-normal text-muted-foreground">共 {total} 个</span>
             </div>
             {activityFilter !== 'all' && (
-              <Button variant="ghost" size="sm" onClick={() => { setActivityFilter('all'); setPage(1) }} className="h-8 text-xs">
+              <Button variant="ghost" size="sm" onClick={() => { setActivityFilter('all'); setPage(1) }} className="h-8 max-w-full justify-start text-xs">
                 清除筛选: {activityFilter === 'active' ? '活跃' : activityFilter === 'inactive' ? '不活跃' : activityFilter === 'very_inactive' ? '非常不活跃' : '从未请求'}
               </Button>
             )}
@@ -865,8 +888,8 @@ export function UserManagement() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-col sm:flex-row gap-4 mb-4">
-            <div className="flex-1 flex gap-2">
-              <div className="relative flex-1 max-w-sm">
+            <div className="flex-1 flex flex-col sm:flex-row gap-2 min-w-0">
+              <div className="relative flex-1 min-w-0 sm:max-w-sm">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="搜索用户名/邮箱/LinuxDoID/邀请码..."
@@ -876,7 +899,7 @@ export function UserManagement() {
                   className="pl-9"
                 />
               </div>
-              <Button onClick={handleSearch}>搜索</Button>
+              <Button onClick={handleSearch} className="w-full sm:w-auto">搜索</Button>
             </div>
             <div className="w-full sm:w-40">
               <Select value={activityFilter} onChange={(e) => { setActivityFilter(e.target.value); setPage(1) }}>
@@ -935,7 +958,7 @@ export function UserManagement() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:ml-auto">
-                <div className="w-full sm:w-48">
+                <div className="w-full sm:w-48 min-w-0">
                   <Select
                     value={batchTargetGroup}
                     onChange={(e) => setBatchTargetGroup(e.target.value)}
@@ -951,6 +974,7 @@ export function UserManagement() {
                 </div>
                 <Button
                   size="sm"
+                  className="w-full sm:w-auto"
                   onClick={batchMoveUsers}
                   disabled={batchMoving || selectedUserIds.size === 0 || !batchTargetGroup}
                 >
@@ -961,160 +985,267 @@ export function UserManagement() {
             </div>
           )}
 
-          {/* Users Table */}
+          {/* Users */}
           {loading && !users.length ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : users.length > 0 ? (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead className="w-10">
-                      <input
-                        type="checkbox"
-                        role="checkbox"
-                        aria-label="全选本页用户"
-                        checked={allSelectedOnPage}
-                        onChange={toggleSelectAllOnPage}
-                        className="h-4 w-4 rounded border-input text-primary focus-visible:ring-2 focus-visible:ring-ring"
-                      />
-                    </TableHead>
-                    <TableHead className="w-16">ID</TableHead>
-                    <TableHead>用户</TableHead>
-                    <TableHead className="hidden sm:table-cell">角色</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead className="hidden lg:table-cell">Linux.do</TableHead>
-                    <TableHead className="text-right">额度 (USD)</TableHead>
-                    <TableHead className="text-right hidden sm:table-cell">已用</TableHead>
-                    <TableHead className="text-right hidden md:table-cell">请求数</TableHead>
-                    <TableHead className="hidden md:table-cell">最后请求</TableHead>
-                    <TableHead>活跃度</TableHead>
-                    <TableHead className="w-20">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.map((user) => (
-                    <TableRow key={user.id} className="hover:bg-muted/50 transition-colors group">
-                      <TableCell className="w-10">
+            <>
+              <div className="md:hidden divide-y divide-border rounded-lg border overflow-hidden">
+                {users.map((user) => {
+                  const sourceInfo = user.source ? SOURCE_LABELS[user.source] : null
+                  const SourceIcon = sourceInfo?.icon
+                  return (
+                    <div key={user.id} className="p-3 space-y-3 bg-background">
+                      <div className="flex items-start gap-3">
                         <input
                           type="checkbox"
                           role="checkbox"
                           aria-label={`选择用户 ${user.username}`}
                           checked={selectedUserIds.has(user.id)}
                           onChange={() => toggleSelectUser(user.id)}
-                          className="h-4 w-4 rounded border-input text-primary focus-visible:ring-2 focus-visible:ring-ring"
+                          className="mt-2 h-4 w-4 shrink-0 rounded border-input text-primary focus-visible:ring-2 focus-visible:ring-ring"
                         />
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground tabular-nums">{user.id}</TableCell>
-                      <TableCell>
-                        <div
-                          className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted/30 hover:bg-primary/5 transition-all cursor-pointer border border-transparent hover:border-primary/20 w-max min-w-[180px]"
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
                           onClick={() => openUserAnalysis(user.id, user.username)}
                           title="查看用户分析"
                         >
-                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-sm text-primary font-bold shrink-0">
-                            {user.username[0]?.toUpperCase()}
-                          </div>
-                          <div className="flex flex-col min-w-0">
-                            <span className="font-bold text-sm tracking-tight">{user.username}</span>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              {user.display_name && (
-                                <span className="text-[10px] text-muted-foreground">{user.display_name}</span>
-                              )}
-                              <Badge variant="outline" className="px-1.5 py-0 h-4 text-[9px] font-medium leading-none shrink-0 border-muted-foreground/20">
-                                {user.group || 'default'}
-                              </Badge>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-sm text-primary font-bold shrink-0">
+                              {user.username[0]?.toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate text-sm font-bold tracking-tight">{user.username}</span>
+                                <span className="shrink-0 text-[11px] text-muted-foreground font-mono">#{user.id}</span>
+                              </div>
+                              <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                                {user.display_name && (
+                                  <span className="max-w-[9rem] truncate text-[11px] text-muted-foreground">{user.display_name}</span>
+                                )}
+                                <Badge variant="outline" className="max-w-[8rem] truncate px-1.5 py-0 h-4 text-[9px] font-medium leading-none border-muted-foreground/20">
+                                  {user.group || 'default'}
+                                </Badge>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">
+                        </button>
+                        <div className="shrink-0">{getStatusBadge(user.status)}</div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
                         {getRoleBadge(user.role)}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(user.status)}</TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        {user.linux_do_id ? (
-                          <button
-                            onClick={async () => {
-                              const lid = user.linux_do_id
-                              if (!lid || linuxDoLookupLoading) return
-                              setLinuxDoLookupLoading(lid)
-                              try {
-                                const res = await fetch(`${apiUrl}/api/linuxdo/lookup/${encodeURIComponent(lid)}`, { headers: getAuthHeaders() })
-                                const data = await res.json()
-                                if (data.success && data.data?.profile_url) {
-                                  window.open(data.data.profile_url, '_blank')
-                                } else if (data.error_type === 'rate_limit') {
-                                  showToast('error', data.message || `请求被限速，请等待 ${data.wait_seconds || '?'} 秒后重试`)
-                                } else if (data.fallback_url) {
-                                  window.open(data.fallback_url, '_blank')
-                                  showToast('info', '服务器查询失败，已在新标签页打开 Linux.do 证书页面')
-                                } else {
-                                  showToast('error', data.message || '查询 Linux.do 用户名失败')
-                                }
-                              } catch { showToast('error', '查询 Linux.do 用户名失败') }
-                              finally { setLinuxDoLookupLoading(null) }
-                            }}
-                            disabled={linuxDoLookupLoading === user.linux_do_id}
-                            className="text-xs font-mono text-blue-500 hover:text-blue-600 hover:underline disabled:opacity-50 cursor-pointer"
-                            title="点击查看 Linux.do 用户主页"
-                          >
-                            {linuxDoLookupLoading === user.linux_do_id ? '查询中...' : user.linux_do_id}
-                          </button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
+                        {getActivityBadge(user.activity_level)}
+                        {sourceInfo && SourceIcon && (
+                          <Badge variant="secondary" className="max-w-full gap-1 px-2 py-0.5">
+                            <SourceIcon className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{sourceInfo.label}</span>
+                          </Badge>
                         )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm font-bold text-primary tabular-nums tracking-tight">
-                        {formatQuota(user.quota)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs text-muted-foreground hidden sm:table-cell tabular-nums">
-                        {formatQuota(user.used_quota)}
-                      </TableCell>
-                      <TableCell className="text-right hidden md:table-cell tabular-nums font-bold text-sm">
-                        {user.request_count.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell text-xs whitespace-nowrap tabular-nums text-muted-foreground">{formatLastRequest(user)}</TableCell>
-                      <TableCell>{getActivityBadge(user.activity_level)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-blue-500 hover:text-blue-600 hover:bg-blue-500/10 h-7 w-7 p-0"
-                            onClick={() => openUserAnalysis(user.id, user.username)}
-                            title="用户分析"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-green-500 hover:text-green-600 hover:bg-green-500/10 h-7 w-7 p-0"
-                            onClick={() => addToWhitelist(user.id, user.username)}
-                            title="加入 AI 封禁白名单"
-                          >
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0"
-                            onClick={() => deleteUser(user.id, user.username)}
-                            disabled={deleting}
-                            title="删除用户"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="min-w-0 rounded-md bg-muted/30 p-2">
+                          <div className="text-muted-foreground">额度</div>
+                          <div className="mt-0.5 font-mono font-semibold text-primary tabular-nums">{formatQuota(user.quota)}</div>
                         </div>
-                      </TableCell>
+                        <div className="min-w-0 rounded-md bg-muted/30 p-2">
+                          <div className="text-muted-foreground">已用 / 请求</div>
+                          <div className="mt-0.5 truncate font-mono tabular-nums">
+                            {formatQuota(user.used_quota)} · {user.request_count.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="col-span-2 min-w-0 rounded-md bg-muted/30 p-2">
+                          <div className="text-muted-foreground">最后请求</div>
+                          <div className="mt-0.5 truncate tabular-nums">{formatLastRequest(user)}</div>
+                        </div>
+                        {user.linux_do_id && (
+                          <div className="col-span-2 min-w-0 rounded-md bg-muted/30 p-2">
+                            <div className="text-muted-foreground">Linux.do</div>
+                            <button
+                              type="button"
+                              onClick={() => handleLinuxDoLookup(user.linux_do_id!)}
+                              disabled={linuxDoLookupLoading === user.linux_do_id}
+                              className="mt-0.5 block max-w-full truncate font-mono text-blue-500 disabled:opacity-50"
+                              title="点击查看 Linux.do 用户主页"
+                            >
+                              {linuxDoLookupLoading === user.linux_do_id ? '查询中...' : user.linux_do_id}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          onClick={() => openUserAnalysis(user.id, user.username)}
+                          title="用户分析"
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-1" />
+                          分析
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-xs text-green-600 border-green-200 hover:bg-green-50 dark:text-green-400 dark:border-green-900 dark:hover:bg-green-950/30"
+                          onClick={() => addToWhitelist(user.id, user.username)}
+                          title="加入 AI 封禁白名单"
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+                          白名单
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
+                          onClick={() => deleteUser(user.id, user.username)}
+                          disabled={deleting}
+                          title="删除用户"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          删除
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="hidden md:block rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <input
+                          type="checkbox"
+                          role="checkbox"
+                          aria-label="全选本页用户"
+                          checked={allSelectedOnPage}
+                          onChange={toggleSelectAllOnPage}
+                          className="h-4 w-4 rounded border-input text-primary focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      </TableHead>
+                      <TableHead className="w-16">ID</TableHead>
+                      <TableHead>用户</TableHead>
+                      <TableHead className="hidden lg:table-cell">角色</TableHead>
+                      <TableHead>状态</TableHead>
+                      <TableHead className="hidden xl:table-cell">Linux.do</TableHead>
+                      <TableHead className="text-right">额度 (USD)</TableHead>
+                      <TableHead className="text-right hidden lg:table-cell">已用</TableHead>
+                      <TableHead className="text-right hidden lg:table-cell">请求数</TableHead>
+                      <TableHead className="hidden xl:table-cell">最后请求</TableHead>
+                      <TableHead>活跃度</TableHead>
+                      <TableHead className="w-24">操作</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((user) => (
+                      <TableRow key={user.id} className="hover:bg-muted/50 transition-colors">
+                        <TableCell className="w-10">
+                          <input
+                            type="checkbox"
+                            role="checkbox"
+                            aria-label={`选择用户 ${user.username}`}
+                            checked={selectedUserIds.has(user.id)}
+                            onChange={() => toggleSelectUser(user.id)}
+                            className="h-4 w-4 rounded border-input text-primary focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground tabular-nums">{user.id}</TableCell>
+                        <TableCell>
+                          <div
+                            className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted/30 hover:bg-primary/5 transition-all cursor-pointer border border-transparent hover:border-primary/20 w-fit max-w-[240px]"
+                            onClick={() => openUserAnalysis(user.id, user.username)}
+                            title="查看用户分析"
+                          >
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-sm text-primary font-bold shrink-0">
+                              {user.username[0]?.toUpperCase()}
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-bold text-sm tracking-tight truncate">{user.username}</span>
+                              <div className="flex min-w-0 items-center gap-1.5 mt-0.5">
+                                {user.display_name && (
+                                  <span className="truncate text-[10px] text-muted-foreground">{user.display_name}</span>
+                                )}
+                                <Badge variant="outline" className="max-w-[8rem] truncate px-1.5 py-0 h-4 text-[9px] font-medium leading-none shrink-0 border-muted-foreground/20">
+                                  {user.group || 'default'}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          {getRoleBadge(user.role)}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(user.status)}</TableCell>
+                        <TableCell className="hidden xl:table-cell">
+                          {user.linux_do_id ? (
+                            <button
+                              onClick={() => handleLinuxDoLookup(user.linux_do_id!)}
+                              disabled={linuxDoLookupLoading === user.linux_do_id}
+                              className="max-w-[120px] truncate text-xs font-mono text-blue-500 hover:text-blue-600 hover:underline disabled:opacity-50 cursor-pointer"
+                              title="点击查看 Linux.do 用户主页"
+                            >
+                              {linuxDoLookupLoading === user.linux_do_id ? '查询中...' : user.linux_do_id}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm font-bold text-primary tabular-nums tracking-tight">
+                          {formatQuota(user.quota)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs text-muted-foreground hidden lg:table-cell tabular-nums">
+                          {formatQuota(user.used_quota)}
+                        </TableCell>
+                        <TableCell className="text-right hidden lg:table-cell tabular-nums font-bold text-sm">
+                          {user.request_count.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="hidden xl:table-cell text-xs whitespace-nowrap tabular-nums text-muted-foreground">{formatLastRequest(user)}</TableCell>
+                        <TableCell>{getActivityBadge(user.activity_level)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-0.5">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-blue-500 hover:text-blue-600 hover:bg-blue-500/10 h-7 w-7 p-0"
+                              onClick={() => openUserAnalysis(user.id, user.username)}
+                              title="用户分析"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-green-500 hover:text-green-600 hover:bg-green-500/10 h-7 w-7 p-0"
+                              onClick={() => addToWhitelist(user.id, user.username)}
+                              title="加入 AI 封禁白名单"
+                            >
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0"
+                              onClick={() => deleteUser(user.id, user.username)}
+                              disabled={deleting}
+                              title="删除用户"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           ) : (
             <div className="py-20 text-center text-muted-foreground bg-muted/10 rounded-lg border border-dashed">
               <Users className="mx-auto h-10 w-10 mb-3 opacity-20" />
@@ -1282,13 +1413,13 @@ export function UserManagement() {
           onUnbanned={() => fetchUsers()}
           onWhitelistChanged={() => fetchUsers()}
           renderExtra={() => (
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+            <div className="space-y-3 min-w-0">
+              <h4 className="text-sm font-semibold text-muted-foreground flex flex-wrap items-center gap-2">
                 <Users className="w-4 h-4" />
                 邀请用户
                 {invitedUsers?.inviter?.aff_code && (
-                  <Badge variant="outline" className="text-xs px-1.5 py-0 font-mono">
-                    邀请码: {invitedUsers.inviter.aff_code}
+                  <Badge variant="outline" className="max-w-full text-xs px-1.5 py-0 font-mono">
+                    <span className="truncate">邀请码: {invitedUsers.inviter.aff_code}</span>
                   </Badge>
                 )}
                 {invitedUsers?.stats && invitedUsers.stats.total_invited > 0 && (
@@ -1305,7 +1436,7 @@ export function UserManagement() {
               ) : invitedUsers?.items && invitedUsers.items.length > 0 ? (
                 <>
                   {/* 邀请统计 */}
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div className="rounded-lg border bg-muted/30 p-2 text-center">
                       <div className="text-sm font-bold">{invitedUsers.stats.total_invited}</div>
                       <div className="text-xs text-muted-foreground">邀请总数</div>
@@ -1328,7 +1459,39 @@ export function UserManagement() {
                   </div>
 
                   {/* 邀请用户列表 */}
-                  <div className="rounded-lg border overflow-hidden">
+                  <div className="sm:hidden space-y-2">
+                    {invitedUsers.items.map((u) => (
+                      <div key={u.user_id} className="rounded-lg border bg-muted/10 p-3 text-xs space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate font-medium">{u.username}</span>
+                              <span className="shrink-0 font-mono text-muted-foreground">#{u.user_id}</span>
+                            </div>
+                            {u.display_name && (
+                              <div className="mt-0.5 truncate text-muted-foreground">{u.display_name}</div>
+                            )}
+                          </div>
+                          {u.status === 2 ? (
+                            <Badge variant="destructive" className="shrink-0 text-xs px-1 py-0">禁用</Badge>
+                          ) : (
+                            <Badge variant="success" className="shrink-0 text-xs px-1 py-0">正常</Badge>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="min-w-0 rounded-md bg-muted/40 p-2">
+                            <div className="text-[11px] text-muted-foreground">请求数</div>
+                            <div className="tabular-nums">{u.request_count.toLocaleString()}</div>
+                          </div>
+                          <div className="min-w-0 rounded-md bg-muted/40 p-2">
+                            <div className="text-[11px] text-muted-foreground">消耗 $</div>
+                            <div className="font-mono tabular-nums">{(u.used_quota / 500000).toFixed(2)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden sm:block rounded-lg border overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow className="h-8 bg-muted/50 hover:bg-muted/50">
@@ -1364,7 +1527,7 @@ export function UserManagement() {
 
                   {/* 分页 */}
                   {invitedUsers.total > 10 && (
-                    <div className="flex items-center justify-between pt-2">
+                    <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center sm:justify-between">
                       <span className="text-xs text-muted-foreground">
                         第 {invitedPage} 页，共 {Math.ceil(invitedUsers.total / 10)} 页
                       </span>

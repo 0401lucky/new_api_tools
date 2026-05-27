@@ -305,25 +305,25 @@ export function AbuseBroadcast() {
   const unreadCount = useMemo(() => reports.filter(report => !report.read_at).length, [reports])
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-4 overflow-hidden sm:space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl">
             <RadioTower className="h-6 w-6 text-primary" />
             联合违规广播
           </h2>
           <p className="text-sm text-muted-foreground mt-1">接收跨站通报、查看自己的通报记录，并按 LinuxDo ID / IP 匹配本地用户。</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => void refresh()} disabled={loading || syncing || connecting}>
+        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:w-auto">
+          <Button variant="outline" onClick={() => void refresh()} disabled={loading || syncing || connecting} className="w-full">
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             刷新
           </Button>
-          <Button variant="outline" onClick={() => void connectHub()} disabled={connecting || !status?.configured}>
+          <Button variant="outline" onClick={() => void connectHub()} disabled={connecting || !status?.configured} className="w-full">
             <RadioTower className={`h-4 w-4 mr-2 ${connecting ? 'animate-pulse' : ''}`} />
             连接 Hub
           </Button>
-          <Button onClick={() => void syncNow()} disabled={syncing || connecting || !status?.enabled || !status?.configured}>
+          <Button onClick={() => void syncNow()} disabled={syncing || connecting || !status?.enabled || !status?.configured} className="w-full">
             <RadioTower className={`h-4 w-4 mr-2 ${syncing ? 'animate-pulse' : ''}`} />
             立即同步
           </Button>
@@ -350,7 +350,7 @@ export function AbuseBroadcast() {
       </div>
 
       <Tabs value={activeView} onValueChange={(value) => setActiveView(value as BroadcastView)}>
-        <TabsList className="grid w-full grid-cols-3 md:w-auto">
+        <TabsList className="grid h-auto w-full grid-cols-3 md:w-auto">
           <TabsTrigger value="inbox">收件箱</TabsTrigger>
           <TabsTrigger value="outgoing">我的通报</TabsTrigger>
           <TabsTrigger value="status">接入状态</TabsTrigger>
@@ -467,12 +467,12 @@ export function AbuseBroadcast() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={() => void saveSettings()} disabled={savingSettings}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <Button onClick={() => void saveSettings()} disabled={savingSettings} className="w-full sm:w-auto">
                   {savingSettings ? '保存中...' : '保存配置'}
                 </Button>
                 {settings?.has_secret && (
-                  <Button variant="outline" onClick={() => void clearSecret()} disabled={savingSettings}>
+                  <Button variant="outline" onClick={() => void clearSecret()} disabled={savingSettings} className="w-full sm:w-auto">
                     清空 Secret
                   </Button>
                 )}
@@ -527,11 +527,11 @@ export function AbuseBroadcast() {
 function MetricCard({ title, value, icon }: { title: string; value: string; icon: ReactNode }) {
   return (
     <Card>
-      <CardContent className="p-4 flex items-center gap-3">
+      <CardContent className="flex items-center gap-3 p-4">
         <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary grid place-items-center">{icon}</div>
-        <div>
+        <div className="min-w-0">
           <div className="text-xs text-muted-foreground">{title}</div>
-          <div className="text-lg font-bold">{value}</div>
+          <div className="truncate text-lg font-bold" title={value}>{value}</div>
         </div>
       </CardContent>
     </Card>
@@ -559,7 +559,7 @@ function ResponsiveTable({ columns, rows, empty }: { columns: string[]; rows: Re
             {row.map((cell, cellIndex) => (
               <div key={cellIndex} className="flex gap-2">
                 <span className="shrink-0 w-20 text-xs text-muted-foreground">{columns[cellIndex]}</span>
-                <span className="flex-1 min-w-0 break-words">{cell}</span>
+                <span className="flex-1 min-w-0 break-words [&_code]:whitespace-normal [&_code]:break-all [&_button]:w-full sm:[&_button]:w-auto">{cell}</span>
               </div>
             ))}
           </div>
@@ -611,7 +611,7 @@ function ReportDetailDialog({
 }) {
   return (
     <Dialog open={!!report} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-5xl w-full">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-5xl max-h-[92dvh] overflow-y-auto">
         {report && (
           <>
             <DialogHeader>
@@ -619,7 +619,7 @@ function ReportDetailDialog({
                 <ShieldAlert className="h-5 w-5 text-amber-600" />
                 通报详情
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="break-all">
                 {report.report_id} · 来源节点 {report.reporter_node_id || '-'}
               </DialogDescription>
             </DialogHeader>
@@ -644,7 +644,7 @@ function ReportDetailDialog({
                   {(report.identities || []).length === 0 ? (
                     <span className="text-sm text-muted-foreground">暂无身份信息</span>
                   ) : report.identities?.map((identity, index) => (
-                    <Badge key={`${identity.type}-${identity.value || identity.hash}-${index}`} variant={identity.type === 'ip' ? 'secondary' : 'warning'} className="font-mono">
+                    <Badge key={`${identity.type}-${identity.value || identity.hash}-${index}`} variant={identity.type === 'ip' ? 'secondary' : 'warning'} className="max-w-full whitespace-normal break-all font-mono">
                       {identity.type}: {identity.value || identity.hash?.slice(0, 16) || '-'}
                     </Badge>
                   ))}
@@ -686,7 +686,7 @@ function ReportDetailDialog({
 
               <section className="space-y-2">
                 <h3 className="text-sm font-semibold">证据摘要</h3>
-                <pre className="max-h-72 overflow-auto rounded-md border bg-slate-950 p-3 text-xs leading-5 text-slate-100">{prettyEvidence(report.evidence_summary)}</pre>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-md border bg-slate-950 p-3 text-xs leading-5 text-slate-100">{prettyEvidence(report.evidence_summary)}</pre>
               </section>
             </div>
           </>

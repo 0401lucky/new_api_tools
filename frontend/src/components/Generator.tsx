@@ -107,24 +107,24 @@ export function Generator() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="min-w-0 space-y-4 sm:space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">生成器</h2>
-        <p className="text-muted-foreground mt-1">批量生成新的额度兑换码</p>
+      <div className="min-w-0">
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">生成器</h2>
+        <p className="text-sm sm:text-base text-muted-foreground mt-1">批量生成新的额度兑换码</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
+      <Card className="min-w-0">
+        <CardHeader className="p-4 pb-3 sm:p-6 sm:pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg sm:text-2xl">
+            <Sparkles className="w-5 h-5 shrink-0 text-primary" />
             配置参数
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-xs sm:text-sm">
             填写以下信息以生成兑换码，生成后的兑换码可以在"兑换码管理"中查看。
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
           <GeneratorForm onSubmit={handleSubmit} isLoading={isLoading} />
         </CardContent>
       </Card>

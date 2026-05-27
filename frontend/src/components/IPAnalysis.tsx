@@ -761,25 +761,25 @@ export function IPAnalysis() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="min-w-0 space-y-4 overflow-hidden animate-in fade-in duration-500 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Globe className="w-8 h-8 text-primary" />
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2 sm:text-3xl">
+            <Globe className="w-6 h-6 text-primary sm:h-8 sm:w-8" />
             IP 地区分析
           </h2>
           <p className="text-muted-foreground mt-1">
             访问来源地区分布与流量统计
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
           <Button
             variant="outline"
             size="sm"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="h-9"
+            className="h-9 w-full sm:w-auto"
           >
             <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
             {refreshing ? '正在获取最新数据...' : (
@@ -791,7 +791,7 @@ export function IPAnalysis() {
               variant="outline" 
               size="sm" 
               onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
-              className="h-9 min-w-[100px]"
+              className="h-9 w-full justify-between sm:min-w-[100px]"
               title={systemScale ? `当前系统规模: ${systemScale}` : ''}
             >
               <Timer className="h-4 w-4 mr-2" />
@@ -806,7 +806,7 @@ export function IPAnalysis() {
             </Button>
             
             {showIntervalDropdown && (
-              <div className="absolute right-0 mt-1 w-48 bg-popover border rounded-md shadow-lg z-50">
+              <div className="absolute right-0 mt-1 w-48 max-w-[calc(100vw-2rem)] bg-popover border rounded-md shadow-lg z-50">
                 <div className="p-2 border-b">
                   <p className="text-xs text-muted-foreground">刷新间隔</p>
                 </div>
@@ -835,14 +835,14 @@ export function IPAnalysis() {
               {systemScale}
             </span>
           )}
-          <div className="inline-flex rounded-lg border bg-muted/50 p-1">
+          <div className="inline-flex w-full overflow-x-auto rounded-lg border bg-muted/50 p-1 sm:w-auto">
             {(['1h', '6h', '24h', '7d'] as TimeWindow[]).map((w) => (
               <Button
                 key={w}
                 variant={timeWindow === w ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setTimeWindow(w)}
-                className="h-7 text-xs px-3"
+                className="h-7 flex-1 px-3 text-xs sm:flex-none"
               >
                 {getTimeWindowLabel(w)}
               </Button>
@@ -852,7 +852,7 @@ export function IPAnalysis() {
       </div>
 
       {/* Overview Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
         <StatCard
           title="独立 IP 数"
           value={formatNumber(data?.total_ips || 0)}
@@ -895,18 +895,20 @@ export function IPAnalysis() {
       </div>
 
       {/* IP Lookup */}
-      <IPLookup />
+      <div className="min-w-0 overflow-hidden">
+        <IPLookup />
+      </div>
 
       {/* World Map */}
       <Card className="shadow-sm">
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg flex items-center gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <CardTitle className="text-base flex items-center gap-2 sm:text-lg">
                 <Globe className="w-5 h-5 text-muted-foreground" />
                 Web 流量请求（按{mapType === 'world' ? '国家/地区' : '省份'}）
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="mt-1">
                 过去 {getTimeWindowLabel(timeWindow)} · Top {formatNumber(data?.sampled_ip_limit || 3000)} IP 地理样本
                 {data && ` · 覆盖 ${data.coverage_percentage.toFixed(1)}% 流量`}
               </CardDescription>
@@ -916,7 +918,7 @@ export function IPAnalysis() {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 px-3 gap-1.5"
+                className="h-8 w-full justify-between gap-1.5 px-3 sm:w-auto"
                 onClick={() => setMapDropdownOpen(!mapDropdownOpen)}
               >
                 {mapType === 'world' ? (
@@ -965,7 +967,7 @@ export function IPAnalysis() {
         </CardHeader>
         <CardContent className="p-0">
           {mapError && mapType === 'world' ? (
-            <div className="h-[450px] flex flex-col items-center justify-center text-muted-foreground bg-muted/20 rounded-b-lg gap-3">
+            <div className="h-[320px] sm:h-[450px] flex flex-col items-center justify-center text-muted-foreground bg-muted/20 rounded-b-lg gap-3">
               <AlertTriangle className="h-10 w-10 text-yellow-500" />
               <span>地图加载失败，请刷新页面重试</span>
               <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
@@ -973,22 +975,22 @@ export function IPAnalysis() {
               </Button>
             </div>
           ) : !isCurrentMapLoaded ? (
-            <div className="h-[450px] flex items-center justify-center text-muted-foreground">
+            <div className="h-[320px] sm:h-[450px] flex items-center justify-center text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin mr-2" />
               加载地图中...
             </div>
           ) : data && (mapType === 'world' ? data.by_country.length > 0 : data.by_province.length > 0) ? (
-            <div className="relative overflow-hidden rounded-b-lg">
+            <div className="relative h-[320px] overflow-hidden rounded-b-lg sm:h-[450px]">
               <ReactECharts
                 key={`${mapType}-${isDarkMode ? 'dark' : 'light'}`}
                 echarts={echarts}
                 option={currentMapOption}
-                style={{ height: '450px', width: '100%' }}
+                style={{ height: '100%', width: '100%' }}
                 opts={{ renderer: 'canvas' }}
               />
             </div>
           ) : (
-            <div className="h-[450px] flex items-center justify-center text-muted-foreground bg-muted/20 rounded-b-lg">
+            <div className="h-[320px] sm:h-[450px] flex items-center justify-center text-muted-foreground bg-muted/20 rounded-b-lg">
               暂无数据
             </div>
           )}
@@ -998,7 +1000,7 @@ export function IPAnalysis() {
       {/* Traffic Ranking Table */}
       <Card className="shadow-sm">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">Top IP 样本国家/地区排名</CardTitle>
+          <CardTitle className="text-base sm:text-lg">Top IP 样本国家/地区排名</CardTitle>
           <CardDescription>
             过去 {getTimeWindowLabel(timeWindow)}
             {data && ` · ${formatNumber(data.sampled_ips)} 个样本 IP / ${formatNumber(data.sampled_requests)} 次请求`}
@@ -1006,8 +1008,16 @@ export function IPAnalysis() {
         </CardHeader>
         <CardContent>
           {data && data.by_country.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <>
+              <div className="space-y-2 md:hidden">
+                {data.by_country.slice(0, 10).map((item, index) => (
+                  <RegionMobileCard key={index} title={item.country} rank={index + 1} metrics={[
+                    { label: '流量', value: item.request_count.toLocaleString('zh-CN') },
+                  ]} />
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full">
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">国家/地区</th>
@@ -1028,8 +1038,9 @@ export function IPAnalysis() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
+                </table>
+              </div>
+            </>
           ) : (
             <div className="h-[200px] flex items-center justify-center text-muted-foreground bg-muted/20 rounded-lg">
               暂无数据
@@ -1049,7 +1060,16 @@ export function IPAnalysis() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <div className="space-y-2 md:hidden">
+              {data.by_province.slice(0, 10).map((item, index) => (
+                <RegionMobileCard key={index} title={item.region || '-'} rank={index + 1} metrics={[
+                  { label: 'IP数', value: item.ip_count.toLocaleString('zh-CN') },
+                  { label: '流量', value: item.request_count.toLocaleString('zh-CN') },
+                  { label: '占比', value: `${item.percentage.toFixed(1)}%` },
+                ]} />
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
@@ -1093,13 +1113,13 @@ export function IPAnalysis() {
           <CardContent>
             <div className="space-y-2 text-sm">
               {data.overseas_percentage > 30 && (
-                <div className="flex items-center gap-2 text-yellow-700 dark:text-yellow-400">
+                <div className="flex items-start gap-2 text-yellow-700 dark:text-yellow-400">
                   <ChevronRight className="w-4 h-4" />
                   <span>海外访问占比较高 ({data.overseas_percentage.toFixed(1)}%)，请关注是否有异常访问</span>
                 </div>
               )}
               {data.by_country.length > 20 && (
-                <div className="flex items-center gap-2 text-yellow-700 dark:text-yellow-400">
+                <div className="flex items-start gap-2 text-yellow-700 dark:text-yellow-400">
                   <ChevronRight className="w-4 h-4" />
                   <span>访问来源国家/地区较多 ({data.by_country.length} 个)，建议检查是否有代理滥用</span>
                 </div>
@@ -1113,6 +1133,35 @@ export function IPAnalysis() {
 }
 
 // Stat Card Component
+function RegionMobileCard({
+  title,
+  rank,
+  metrics,
+}: {
+  title: string
+  rank: number
+  metrics: Array<{ label: string; value: string }>
+}) {
+  return (
+    <div className="rounded-lg border bg-background px-3 py-2.5">
+      <div className="flex items-center gap-3">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-xs font-bold text-muted-foreground">
+          {rank}
+        </span>
+        <div className="min-w-0 flex-1 truncate text-sm font-medium">{title}</div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="rounded-md bg-muted/40 px-2.5 py-2">
+            <div className="text-[10px] text-muted-foreground">{metric.label}</div>
+            <div className="mt-0.5 text-sm font-semibold tabular-nums">{metric.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 interface StatCardProps {
   title: string
   value: string
@@ -1134,19 +1183,19 @@ function StatCard({ title, value, rawValue, icon: Icon, color }: StatCardProps) 
 
   return (
     <Card className="overflow-hidden hover:shadow-md transition-all duration-200">
-      <CardContent className="p-5">
-        <div className="flex justify-between items-start">
+      <CardContent className="p-3 sm:p-5">
+        <div className="flex justify-between items-start gap-2">
           <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-xs font-medium text-muted-foreground sm:text-sm">{title}</p>
             <div 
-              className="text-2xl font-bold tracking-tight cursor-default"
+              className="text-xl font-bold tracking-tight cursor-default sm:text-2xl"
               title={rawValue !== undefined ? rawValue.toLocaleString('zh-CN') : undefined}
             >
               {value}
             </div>
           </div>
-          <div className={cn("p-2.5 rounded-xl", theme.bg)}>
-            <Icon className="w-5 h-5" />
+          <div className={cn("rounded-xl p-2 sm:p-2.5", theme.bg)}>
+            <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
         </div>
       </CardContent>
