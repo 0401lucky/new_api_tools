@@ -247,8 +247,8 @@ func (s *RiskMonitoringService) GetUserAnalysis(userID int64, windowSeconds int6
 	if requestsPerMinute > 5.0 {
 		riskFlags = append(riskFlags, "HIGH_RPM")
 	}
-	if uniqueIPs > 10 {
-		riskFlags = append(riskFlags, "MANY_IPS")
+	if flag, _ := classifyAIBanIPVolume(uniqueIPs, totalRequests); flag != "" {
+		riskFlags = append(riskFlags, flag)
 	}
 	if failureRate >= 0.5 && totalRequests > 10 {
 		riskFlags = append(riskFlags, "HIGH_FAILURE_RATE")

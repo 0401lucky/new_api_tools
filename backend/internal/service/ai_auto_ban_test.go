@@ -141,6 +141,31 @@ func seedAIBanSwitchingUser(t *testing.T) {
 	}
 }
 
+func seedAIBanManyIPUser(t *testing.T, userID int64, uniqueIPs, totalRequests int) {
+	t.Helper()
+	db := NewAIAutoBanService().db.DB
+	now := time.Now().Unix()
+	username := fmt.Sprintf("manyip%d", userID)
+	tokenID := userID * 10
+	if _, err := db.Exec(`INSERT INTO users (id, username, display_name, status, "group", role, request_count)
+		VALUES (?, ?, ?, 1, 'default', 1, ?)`, userID, username, username, totalRequests); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO tokens (id, user_id, status) VALUES (?, ?, 1)`, tokenID, userID); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < totalRequests; i++ {
+		ip := fmt.Sprintf("198.51.100.%d", (i%uniqueIPs)+1)
+		if _, err := db.Exec(`INSERT INTO logs (
+			user_id, username, created_at, type, model_name, quota, prompt_tokens,
+			completion_tokens, use_time, ip, channel_id, channel_name, token_id, token_name, "group"
+		) VALUES (?, ?, ?, 2, 'gpt-test', 100, 50, 100, 1.2, ?, 1, 'openai', ?, 'main', 'default')`,
+			userID, username, now-int64(totalRequests-i), ip, tokenID); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func mockAIBanServer(t *testing.T, content string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -383,6 +408,24 @@ func TestAIBanThresholdNormalizationIsConservative(t *testing.T) {
 	}
 }
 
+func TestAIBanIPVolumeClassificationBoundaries(t *testing.T) {
+	if flag, _ := classifyAIBanIPVolume(8, 30); flag != "" {
+		t.Fatalf("8 IPs should not be upgraded by IP volume alone, got %s", flag)
+	}
+	if flag, _ := classifyAIBanIPVolume(9, 30); flag != "MANY_IPS" {
+		t.Fatalf("9 IPs should warn, got %s", flag)
+	}
+	if flag, _ := classifyAIBanIPVolume(15, 30); flag != "MANY_IPS_SEVERE" {
+		t.Fatalf("15 IPs should be severe, got %s", flag)
+	}
+	if flag, _ := classifyAIBanIPVolume(20, 30); flag != "MANY_IPS_EXTREME" {
+		t.Fatalf("20 IPs should be extreme, got %s", flag)
+	}
+	if flag, _ := classifyAIBanIPVolume(15, 19); flag != "MANY_IPS" {
+		t.Fatalf("15 IPs with too few requests should warn, got %s", flag)
+	}
+}
+
 func TestAIBanAPIHealthSuspendsAndResets(t *testing.T) {
 	clearAIBanTestCache(t)
 	svc := &AIAutoBanService{}
@@ -440,6 +483,51 @@ func TestAIBanSuspiciousUsersPrioritizesIPSwitching(t *testing.T) {
 	}
 	if toInt64(rows[0]["rapid_switch_count"]) == 0 {
 		t.Fatalf("rapid_switch_count should be populated: %#v", rows[0])
+	}
+}
+
+func TestAIBanSuspiciousUsersFlagsSevereManyIPs(t *testing.T) {
+	clearAIBanTestCache(t)
+	installAIBanSchema(t)
+	seedAIBanManyIPUser(t, 3, 15, 30)
+
+	rows, err := NewAIAutoBanService().GetSuspiciousUsers("24h", 1)
+	if err != nil {
+		t.Fatalf("get suspicious users failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one candidate, got %#v", rows)
+	}
+	if !hasAIBanFlag(rows[0], "MANY_IPS_SEVERE") {
+		t.Fatalf("expected severe many IP flag, got %#v", rows[0])
+	}
+	if score := toFloat64(rows[0]["suspicion_score"]); score < 55 {
+		t.Fatalf("severe many IP score too low: %#v", rows[0])
+	}
+}
+
+func TestAIBanManualAssessOverridesNormalModelForSevereManyIPs(t *testing.T) {
+	clearAIBanTestCache(t)
+	installAIBanSchema(t)
+	seedAIBanManyIPUser(t, 3, 15, 30)
+	server := mockAIBanServer(t, `{"should_ban":false,"risk_score":2,"confidence":0.85,"action":"normal","reason":"Cloudflare 节点轮转，正常"}`)
+	defer server.Close()
+	saveAIBanTestConfig(t, server.URL, true)
+
+	result := NewAIAutoBanService().ManualAssess(3, "24h")
+	if result["action"] != "ban" {
+		t.Fatalf("severe many IPs should override normal model result: %#v", result)
+	}
+	assessment := result["assessment"].(map[string]interface{})
+	if assessment["should_ban"] != true || assessment["model_should_ban"] != false {
+		t.Fatalf("override should preserve model decision and force local ban: %#v", assessment)
+	}
+	if toFloat64(assessment["risk_score"]) < 8 || toFloat64(assessment["confidence"]) < 0.8 {
+		t.Fatalf("override should raise score and confidence: %#v", assessment)
+	}
+	override := result["rule_override"].(map[string]interface{})
+	if override["rule"] != "MANY_IPS_SEVERE" || toInt64(override["unique_ips"]) != 15 {
+		t.Fatalf("override details should describe severe many IPs: %#v", override)
 	}
 }
 

@@ -377,9 +377,9 @@ func (s *AIAutoBanService) enrichAIBanCandidate(row map[string]interface{}, star
 		flags = append(flags, "EMPTY_RESPONSE_ABUSE")
 		score += 35
 	}
-	if uniqueIPs > 10 {
-		flags = append(flags, "MANY_IPS")
-		score += 25
+	if flag, delta := classifyAIBanIPVolume(uniqueIPs, total); flag != "" {
+		flags = append(flags, flag)
+		score += delta
 	}
 	if rpm > 5 {
 		flags = append(flags, "HIGH_RPM")
