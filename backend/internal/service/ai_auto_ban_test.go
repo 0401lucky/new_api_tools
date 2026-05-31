@@ -394,6 +394,76 @@ func TestCallAIBanModelRetriesAfterParseFailure(t *testing.T) {
 	}
 }
 
+func TestCallAIBanModelParsesArrayContent(t *testing.T) {
+	clearAIBanTestCache(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "gemini-test",
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]interface{}{
+						"content": []map[string]string{
+							{
+								"type": "text",
+								"text": `{"should_ban":false,"risk_score":4,"confidence":0.8,"action":"monitor","reason":"数组内容块"}`,
+							},
+						},
+					},
+				},
+			},
+			"usage": map[string]int{
+				"prompt_tokens":     11,
+				"completion_tokens": 7,
+			},
+		})
+	}))
+	defer server.Close()
+
+	got, err := (&AIAutoBanService{}).callAIBanModel(map[string]interface{}{
+		"base_url": server.URL,
+		"api_key":  "test-key",
+		"model":    "gemini-test",
+	}, "审查")
+	if err != nil {
+		t.Fatalf("array content should parse: %v", err)
+	}
+	if got.Action != "monitor" || got.Reason != "数组内容块" || got.PromptTokens != 11 {
+		t.Fatalf("unexpected array content assessment: %+v", got)
+	}
+}
+
+func TestCallAIBanModelParsesReasoningContentWhenContentEmpty(t *testing.T) {
+	clearAIBanTestCache(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "gemini-test",
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]interface{}{
+						"content":           "",
+						"reasoning_content": `{"should_ban":true,"risk_score":8,"confidence":0.82,"action":"ban","reason":"reasoning 字段 JSON"}`,
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	got, err := (&AIAutoBanService{}).callAIBanModel(map[string]interface{}{
+		"base_url": server.URL,
+		"api_key":  "test-key",
+		"model":    "gemini-test",
+	}, "审查")
+	if err != nil {
+		t.Fatalf("reasoning content should parse: %v", err)
+	}
+	if !got.ShouldBan || got.Action != "ban" || got.Reason != "reasoning 字段 JSON" {
+		t.Fatalf("unexpected reasoning content assessment: %+v", got)
+	}
+}
+
 func TestAIBanThresholdNormalizationIsConservative(t *testing.T) {
 	low := aiBanAssessment{ShouldBan: true, RiskScore: 7, Confidence: 0.9, Action: "ban", Reason: "分数不足"}
 	normalizeAIBanAssessment(&low)
@@ -528,6 +598,30 @@ func TestAIBanManualAssessOverridesNormalModelForSevereManyIPs(t *testing.T) {
 	override := result["rule_override"].(map[string]interface{})
 	if override["rule"] != "MANY_IPS_SEVERE" || toInt64(override["unique_ips"]) != 15 {
 		t.Fatalf("override details should describe severe many IPs: %#v", override)
+	}
+}
+
+func TestAIBanManualAssessFallsBackToLocalRulesWhenModelOutputInvalid(t *testing.T) {
+	clearAIBanTestCache(t)
+	installAIBanSchema(t)
+	seedAIBanManyIPUser(t, 3, 15, 30)
+	server := mockAIBanServer(t, "Gemini returned tokens, but no JSON object")
+	defer server.Close()
+	saveAIBanTestConfig(t, server.URL, true)
+
+	result := NewAIAutoBanService().ManualAssess(3, "24h")
+	if result["action"] != "ban" {
+		t.Fatalf("invalid model output should still use local severe many IP rule: %#v", result)
+	}
+	if toString(result["ai_error"]) == "" {
+		t.Fatalf("result should keep AI parse error for diagnostics: %#v", result)
+	}
+	assessment := result["assessment"].(map[string]interface{})
+	if assessment["should_ban"] != true || toFloat64(assessment["risk_score"]) < 8 {
+		t.Fatalf("fallback assessment should be ban-ready: %#v", assessment)
+	}
+	if !strings.Contains(toString(assessment["raw_response"]), "Gemini returned tokens") {
+		t.Fatalf("fallback assessment should preserve raw response: %#v", assessment)
 	}
 }
 

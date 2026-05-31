@@ -96,6 +96,35 @@ type aiBanModelError struct {
 	StatusCode       int
 }
 
+type aiBanChatCompletionResponse struct {
+	Model   string            `json:"model"`
+	Choices []aiBanChatChoice `json:"choices"`
+	Usage   struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
+}
+
+type aiBanChatChoice struct {
+	Message map[string]json.RawMessage `json:"message"`
+	Text    json.RawMessage            `json:"text"`
+}
+
+type aiBanContentPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type aiBanToolCall struct {
+	Function struct {
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+type aiBanFunctionCall struct {
+	Arguments string `json:"arguments"`
+}
+
 func (e *aiBanModelError) Error() string {
 	return e.Message
 }
@@ -516,9 +545,6 @@ func (s *AIAutoBanService) assessUser(userID int64, window string, opts aiBanAss
 	start := time.Now()
 	assessment, err := s.callAIBanModel(config, prompt)
 	if err != nil {
-		if opts.writeHealth {
-			s.recordAIAPIFailure(err.Error())
-		}
 		failedAssessment := aiBanAssessment{
 			ShouldBan:     false,
 			RiskScore:     0,
@@ -533,6 +559,36 @@ func (s *AIAutoBanService) assessUser(userID int64, window string, opts aiBanAss
 			failedAssessment.CompletionTokens = modelErr.CompletionTokens
 			failedAssessment.Model = modelErr.Model
 			failedAssessment.RawResponse = modelErr.RawResponse
+		}
+		scoreThreshold, confidenceThreshold := aiBanThresholdPolicy(config)
+		normalizeAIBanAssessmentWithPolicy(&failedAssessment, scoreThreshold, confidenceThreshold)
+		ruleOverride := applyAIBanRuleOverrides(&failedAssessment, analysis, scoreThreshold, confidenceThreshold)
+		if ruleOverride != nil {
+			action := decideAIBanActionWithPolicy(failedAssessment, scoreThreshold, confidenceThreshold)
+			failedAssessment.Action = action
+			return map[string]interface{}{
+				"user_id":        userID,
+				"username":       username,
+				"window":         window,
+				"protected":      false,
+				"skipped":        false,
+				"action":         action,
+				"message":        "AI 审查输出不可解析，已按本地风控规则兜底: " + err.Error(),
+				"metrics":        buildAIBanMetrics(analysis, excludedRatio),
+				"excluded":       excludedStats,
+				"ip_rule_hits":   ipHits,
+				"assessment":     assessmentToMap(failedAssessment),
+				"assessed":       true,
+				"assessed_at":    time.Now().Unix(),
+				"auto_eligible":  isAutoBanEligibleWithPolicy(failedAssessment, scoreThreshold, confidenceThreshold),
+				"rule_override":  ruleOverride,
+				"ai_error":       err.Error(),
+				"manual_result":  opts.manualResult,
+				"analysis_range": analysis["range"],
+			}, nil
+		}
+		if opts.writeHealth {
+			s.recordAIAPIFailure(err.Error())
 		}
 		return map[string]interface{}{
 			"user_id":    userID,
@@ -730,6 +786,13 @@ func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt 
 		if retryErr == nil {
 			return retryAssessment, nil
 		}
+		if jsonMode && isAIBanParseError(retryErr) {
+			fallbackAssessment, fallbackErr := s.sendAIBanChatCompletion(config, retryPrompt, false)
+			if fallbackErr == nil {
+				return fallbackAssessment, nil
+			}
+			return aiBanAssessment{}, fallbackErr
+		}
 		return aiBanAssessment{}, retryErr
 	}
 
@@ -785,18 +848,7 @@ func (s *AIAutoBanService) sendAIBanChatCompletion(config map[string]interface{}
 		}
 	}
 
-	var chatResp struct {
-		Model   string `json:"model"`
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-		} `json:"usage"`
-	}
+	var chatResp aiBanChatCompletionResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
 		return aiBanAssessment{}, fmt.Errorf("解析 AI 响应失败: %w", err)
 	}
@@ -804,11 +856,17 @@ func (s *AIAutoBanService) sendAIBanChatCompletion(config map[string]interface{}
 		return aiBanAssessment{}, errors.New("AI 响应没有 choices")
 	}
 
-	assessment, err := parseAIBanAssessment(chatResp.Choices[0].Message.Content)
+	content := extractAIBanChoiceContent(chatResp.Choices[0])
+	rawForDebug := content
+	if rawForDebug == "" {
+		rawForDebug = string(body)
+	}
+
+	assessment, err := parseAIBanAssessment(content)
 	if err != nil {
 		return aiBanAssessment{}, &aiBanModelError{
 			Message:          err.Error(),
-			RawResponse:      trimForMessage(chatResp.Choices[0].Message.Content, 1000),
+			RawResponse:      trimForMessage(rawForDebug, 1000),
 			PromptTokens:     chatResp.Usage.PromptTokens,
 			CompletionTokens: chatResp.Usage.CompletionTokens,
 			Model:            chatResp.Model,
@@ -820,8 +878,91 @@ func (s *AIAutoBanService) sendAIBanChatCompletion(config map[string]interface{}
 	}
 	assessment.PromptTokens = chatResp.Usage.PromptTokens
 	assessment.CompletionTokens = chatResp.Usage.CompletionTokens
-	assessment.RawResponse = chatResp.Choices[0].Message.Content
+	assessment.RawResponse = content
 	return assessment, nil
+}
+
+func extractAIBanChoiceContent(choice aiBanChatChoice) string {
+	candidates := []string{}
+	if content := extractAIBanRawText(choice.Text); content != "" {
+		candidates = append(candidates, content)
+	}
+	for _, key := range []string{"content", "reasoning_content", "reasoning"} {
+		if raw, ok := choice.Message[key]; ok {
+			if content := extractAIBanRawText(raw); content != "" {
+				candidates = append(candidates, content)
+			}
+		}
+	}
+	if raw, ok := choice.Message["function_call"]; ok {
+		if content := extractAIBanFunctionArguments(raw); content != "" {
+			candidates = append(candidates, content)
+		}
+	}
+	if raw, ok := choice.Message["tool_calls"]; ok {
+		if content := extractAIBanToolCallArguments(raw); content != "" {
+			candidates = append(candidates, content)
+		}
+	}
+	for _, candidate := range candidates {
+		if extractJSONObject(candidate) != "" {
+			return candidate
+		}
+	}
+	return strings.Join(candidates, "\n")
+}
+
+func extractAIBanRawText(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text)
+	}
+	var parts []aiBanContentPart
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		items := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if trimmed := strings.TrimSpace(part.Text); trimmed != "" {
+				items = append(items, trimmed)
+			}
+		}
+		return strings.Join(items, "\n")
+	}
+	var object map[string]interface{}
+	if err := json.Unmarshal(raw, &object); err == nil {
+		if text := strings.TrimSpace(toString(object["text"])); text != "" {
+			return text
+		}
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func extractAIBanFunctionArguments(raw json.RawMessage) string {
+	var direct aiBanFunctionCall
+	if err := json.Unmarshal(raw, &direct); err == nil && strings.TrimSpace(direct.Arguments) != "" {
+		return strings.TrimSpace(direct.Arguments)
+	}
+	var call aiBanToolCall
+	if err := json.Unmarshal(raw, &call); err == nil {
+		return strings.TrimSpace(call.Function.Arguments)
+	}
+	return ""
+}
+
+func extractAIBanToolCallArguments(raw json.RawMessage) string {
+	var calls []aiBanToolCall
+	if err := json.Unmarshal(raw, &calls); err != nil {
+		return ""
+	}
+	items := make([]string, 0, len(calls))
+	for _, call := range calls {
+		if args := strings.TrimSpace(call.Function.Arguments); args != "" {
+			items = append(items, args)
+		}
+	}
+	return strings.Join(items, "\n")
 }
 
 func isJSONModeUnsupported(err error) bool {
