@@ -422,6 +422,36 @@ func (s *UserManagementService) GetBannedUsers(page, pageSize int, search string
 	}, nil
 }
 
+// BackfillExternalBlackroomBans 一次性把当前 status=2 的非管理员用户导入
+// new-api 小黑屋台账，来源由 new-api 端记录为 external。
+func (s *UserManagementService) BackfillExternalBlackroomBans() (int, []string) {
+	query := s.db.RebindQuery(`
+		SELECT id
+		FROM users
+		WHERE status = ? AND deleted_at IS NULL AND COALESCE(role, 1) < 10
+		ORDER BY id ASC`)
+	rows, err := s.db.Query(query, 2)
+	if err != nil {
+		return 0, []string{err.Error()}
+	}
+
+	client := newNewAPIAdminClient()
+	success := 0
+	errors := make([]string, 0)
+	for _, row := range rows {
+		userID := toInt64(row["id"])
+		if userID <= 0 {
+			continue
+		}
+		if err := client.BlackroomExternalBan(userID, 0, "存量外部封禁导入", "", true); err != nil {
+			errors = append(errors, fmt.Sprintf("user_id=%d: %v", userID, err))
+			continue
+		}
+		success++
+	}
+	return success, errors
+}
+
 // DeleteUser soft-deletes a user
 func (s *UserManagementService) DeleteUser(userID int64, hardDelete bool) (int64, error) {
 	if hardDelete {

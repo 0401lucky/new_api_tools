@@ -46,6 +46,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       # NewAPI 连接
       - NEWAPI_BASEURL=${NEWAPI_BASEURL:-}
+      - NEWAPI_API_KEY=${NEWAPI_API_KEY:-}
+      - NEWAPI_ADMIN_USER_ID=${NEWAPI_ADMIN_USER_ID:-}
     volumes:
       - ./data:/app/data
     restart: unless-stopped

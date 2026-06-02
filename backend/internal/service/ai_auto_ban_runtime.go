@@ -1576,15 +1576,51 @@ func (s *AIAutoBanService) executeAutoBanIfNeeded(detail map[string]interface{},
 		detail["executed"] = false
 		return
 	}
-	if err := (&UserManagementService{db: s.db}).BanUser(userID, true); err != nil {
+	ipCount := externalBanIPCount(detail)
+	reason := detailReason(detail)
+	evidence := buildExternalBanEvidence(detail)
+	if err := newNewAPIAdminClient().BlackroomExternalBan(userID, ipCount, reason, evidence, false); err != nil {
 		detail["action"] = "error"
-		detail["message"] = "自动封禁失败: " + err.Error()
+		detail["message"] = "提交小黑屋封禁失败: " + err.Error()
 		detail["executed"] = false
 		return
 	}
 	detail["executed"] = true
-	detail["message"] = "已自动封禁并禁用 Token"
-	logger.L.Security(fmt.Sprintf("AI 自动封禁 user_id=%d reason=%s", userID, detailReason(detail)))
+	detail["message"] = "已提交 new-api 小黑屋封禁"
+	logger.L.Security(fmt.Sprintf("AI 自动封禁已提交小黑屋 user_id=%d ip_count=%d reason=%s", userID, ipCount, reason))
+}
+
+func externalBanIPCount(detail map[string]interface{}) int64 {
+	if override, ok := detail["rule_override"].(map[string]interface{}); ok {
+		if count := toInt64(override["unique_ips"]); count > 0 {
+			return count
+		}
+	}
+	if metrics, ok := detail["metrics"].(map[string]interface{}); ok {
+		if summary, ok := metrics["summary"].(map[string]interface{}); ok {
+			if count := toInt64(summary["unique_ips"]); count > 0 {
+				return count
+			}
+		}
+	}
+	return 0
+}
+
+func buildExternalBanEvidence(detail map[string]interface{}) string {
+	evidence := map[string]interface{}{
+		"source":         "external_ai_ban",
+		"user_id":        detail["user_id"],
+		"assessment":     detail["assessment"],
+		"metrics":        detail["metrics"],
+		"ip_rule_hits":   detail["ip_rule_hits"],
+		"rule_override":  detail["rule_override"],
+		"analysis_range": detail["analysis_range"],
+	}
+	raw, err := json.Marshal(evidence)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
 }
 
 func detailReason(detail map[string]interface{}) string {

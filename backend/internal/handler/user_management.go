@@ -21,6 +21,7 @@ func RegisterUserManagementRoutes(r *gin.RouterGroup) {
 		g.GET("/activity-stats", GetActivityStats)
 		g.GET("/stats", GetActivityStats)
 		g.GET("/banned", GetBannedUsers)
+		g.POST("/banned/import", ImportBannedUsersToBlackroom)
 		g.GET("", GetUsers)
 		g.DELETE("/:user_id", DeleteUser)
 		g.POST("/batch-delete", BatchDeleteInactiveUsers)
@@ -31,6 +32,19 @@ func RegisterUserManagementRoutes(r *gin.RouterGroup) {
 		g.GET("/:user_id/invited", GetInvitedUsers)
 		g.POST("/tokens/:token_id/disable", DisableToken)
 	}
+}
+
+// POST /api/users/banned/import
+func ImportBannedUsersToBlackroom(c *gin.Context) {
+	svc := service.NewUserManagementService()
+	success, errs := svc.BackfillExternalBlackroomBans()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"success": success,
+			"errors":  errs,
+		},
+	})
 }
 
 // GET /api/users/activity-stats

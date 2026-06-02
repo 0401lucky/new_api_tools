@@ -44,8 +44,9 @@ type Config struct {
 	JWTExpireHours time.Duration `json:"jwt_expire_hours"`
 
 	// NewAPI
-	NewAPIBaseURL string `json:"newapi_base_url"`
-	NewAPIKey     string `json:"newapi_api_key"`
+	NewAPIBaseURL     string `json:"newapi_base_url"`
+	NewAPIKey         string `json:"newapi_api_key"`
+	NewAPIAdminUserID int64  `json:"newapi_admin_user_id"`
 
 	// Logging
 	LogFile  string `json:"log_file"`
@@ -85,8 +86,9 @@ func Load() *Config {
 		JWTExpireHours: time.Duration(getEnvInt("JWT_EXPIRE_HOURS", 24)) * time.Hour,
 
 		// NewAPI
-		NewAPIBaseURL: getEnvStrMulti([]string{"NEWAPI_BASEURL", "NEWAPI_BASE_URL"}, "http://localhost:3000"),
-		NewAPIKey:     getEnvStrMulti([]string{"NEWAPI_API_KEY", "API_KEY"}, ""),
+		NewAPIBaseURL:     getEnvStrMulti([]string{"NEWAPI_BASEURL", "NEWAPI_BASE_URL"}, "http://localhost:3000"),
+		NewAPIKey:         getEnvStr("NEWAPI_API_KEY", ""),
+		NewAPIAdminUserID: int64(getEnvInt("NEWAPI_ADMIN_USER_ID", 0)),
 
 		// Logging
 		LogFile:  getEnvStr("LOG_FILE", ""),

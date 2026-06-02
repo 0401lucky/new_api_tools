@@ -575,6 +575,9 @@ generate_env_file() {
 # NewAPI 环境
 NEWAPI_CONTAINER=${NEWAPI_CONTAINER}
 NEWAPI_NETWORK=${NEWAPI_NETWORK}
+NEWAPI_BASEURL=${NEWAPI_BASEURL:-}
+NEWAPI_API_KEY=${NEWAPI_API_KEY:-}
+NEWAPI_ADMIN_USER_ID=${NEWAPI_ADMIN_USER_ID:-}
 
 # 数据库配置 (Go 版本推荐 SQL_DSN)
 SQL_DSN=${sql_dsn}
@@ -814,6 +817,9 @@ NewAPI Middleware Tool - 一键部署脚本
   API_KEY            后端 API Key (默认: 交互式输入或自动生成)
   FRONTEND_PORT      前端端口 (默认: 1145)
   FRONTEND_BIND      前端端口绑定网卡 0.0.0.0/127.0.0.1 (默认: 交互式选择)
+  NEWAPI_BASEURL     NewAPI 内部地址
+  NEWAPI_API_KEY     NewAPI 管理员系统访问令牌
+  NEWAPI_ADMIN_USER_ID 令牌所属管理员用户 ID
 
 示例:
   # 基本部署

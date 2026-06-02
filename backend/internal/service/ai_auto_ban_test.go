@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/new-api-tools/backend/internal/cache"
+	"github.com/new-api-tools/backend/internal/config"
 )
 
 func clearAIBanTestCache(t *testing.T) {
@@ -687,7 +688,7 @@ func TestAIBanRunScheduledScanUsesDefaultWindowForLegacyConfig(t *testing.T) {
 	}
 }
 
-func TestAIBanRunScanFormalBansUserAndToken(t *testing.T) {
+func TestAIBanRunScanFormalSubmitsBlackroomExternalBan(t *testing.T) {
 	clearAIBanTestCache(t)
 	installAIBanSchema(t)
 	seedAIBanUser(t, 1)
@@ -695,25 +696,57 @@ func TestAIBanRunScanFormalBansUserAndToken(t *testing.T) {
 	defer server.Close()
 	saveAIBanTestConfig(t, server.URL, false)
 
+	var got blackroomExternalBanPayload
+	newAPIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/blackroom/external-ban" {
+			t.Fatalf("unexpected new-api path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "admin-token" {
+			t.Fatalf("unexpected Authorization header: %q", r.Header.Get("Authorization"))
+		}
+		if r.Header.Get("New-Api-User") != "42" {
+			t.Fatalf("unexpected New-Api-User header: %q", r.Header.Get("New-Api-User"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode external ban payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer newAPIServer.Close()
+	t.Setenv("NEWAPI_BASEURL", newAPIServer.URL)
+	t.Setenv("NEWAPI_API_KEY", "admin-token")
+	t.Setenv("NEWAPI_ADMIN_USER_ID", "42")
+	config.Load()
+
 	result := NewAIAutoBanService().RunScan("1h", 10)
 	stats := result["stats"].(map[string]interface{})
 	if toInt64(stats["banned_count"]) != 1 {
 		t.Fatalf("formal scan should record one ban, got %#v", stats)
+	}
+	if got.UserID != 1 || got.Reason != "高风险滥用" || got.Permanent {
+		t.Fatalf("formal scan should submit external ban payload, got %+v", got)
+	}
+	if got.IpCount <= 0 {
+		t.Fatalf("formal scan should pass ip_count to new-api, got %+v", got)
+	}
+	if !strings.Contains(got.Evidence, `"source":"external_ai_ban"`) {
+		t.Fatalf("formal scan should include evidence, got %s", got.Evidence)
 	}
 
 	row, err := NewAIAutoBanService().db.QueryOne(`SELECT status FROM users WHERE id = 1`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if toInt64(row["status"]) != 2 {
-		t.Fatalf("formal scan should ban user, status=%v", row["status"])
+	if toInt64(row["status"]) != 1 {
+		t.Fatalf("formal scan should not directly update local user status, status=%v", row["status"])
 	}
 	token, err := NewAIAutoBanService().db.QueryOne(`SELECT status FROM tokens WHERE id = 10`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if toInt64(token["status"]) != 2 {
-		t.Fatalf("formal scan should disable token, status=%v", token["status"])
+	if toInt64(token["status"]) != 1 {
+		t.Fatalf("formal scan should not directly disable token, status=%v", token["status"])
 	}
 }
 

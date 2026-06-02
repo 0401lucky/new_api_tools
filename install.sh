@@ -880,7 +880,7 @@ do_purge_interactive() {
   echo ""
   echo -e "${GREEN}NewAPI 本身完全不受影响：${NC}"
   echo "  ✓ NewAPI 容器、数据库、Redis、用户充值/Token/日志 → 全部保留"
-  echo "  ✓ 本项目仅以只读方式访问 NewAPI 数据库，从不写入"
+  echo "  ✓ 本项目不修改 NewAPI 源码或表结构；AI 封禁写小黑屋走 NewAPI 管理接口"
   echo ""
   echo -e "${YELLOW}卸载后想再用，重新跑 install.sh 一键部署即可${NC}"
   echo ""

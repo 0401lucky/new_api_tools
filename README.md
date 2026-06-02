@@ -16,7 +16,7 @@
 
 # NewAPI-Tool | NewAPI 增强管理中间件
 
-**NewAPI-Tool** 是面向 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的增强管理中间件。它以旁路方式连接 NewAPI 数据库和缓存服务，把仪表盘、充值审计、兑换码管理、风控分析、模型监控和运维配置集中到一个独立管理后台中。
+**NewAPI-Tool** 是面向 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的增强管理中间件。它以旁路方式连接 NewAPI 数据库、缓存服务和必要的管理接口，把仪表盘、充值审计、兑换码管理、风控分析、模型监控和运维配置集中到一个独立管理后台中。
 
 它的核心原则是**零侵入运行**：不修改 NewAPI 源码，不改变 NewAPI 原有表结构，不接管 NewAPI 主服务流量；只在管理员需要审计、分析、批量处理或扩展运营能力时提供额外工作台。
 
@@ -49,7 +49,7 @@
 
 ## 架构边界
 
-- **零侵入**：NewAPI-Tool 只作为增强管理层运行，不要求改动 `new-api/` 源码。
+- **零侵入**：NewAPI-Tool 只作为增强管理层运行，不要求改动 `new-api/` 源码；AI 封禁写入小黑屋时走 NewAPI 管理接口，不直接改库。
 - **不改 NewAPI schema**：所有涉及 NewAPI 数据表的查询和写入都遵循现有字段、类型和索引语义。
 - **审计优先**：核心能力以查询、可视化、复核和运维辅助为主，批量写操作只覆盖明确的管理场景。
 - **面向生产数据规模**：`logs` 等大表查询采用索引、缓存、超时和估算策略，避免无意义全表扫描。
@@ -106,6 +106,8 @@ docker-compose up -d
 | `DB_MAX_IDLE_CONNS` | 数据库最大空闲连接数 | `15` |
 | `NEWAPI_NETWORK` | NewAPI 所在 Docker 网络 | `new-api_default` |
 | `NEWAPI_BASEURL` | NewAPI 内部地址，用于需要回调上游的功能 | 可选 |
+| `NEWAPI_API_KEY` | NewAPI 管理员系统访问令牌，用于写入小黑屋 | AI 封禁正式执行必填 |
+| `NEWAPI_ADMIN_USER_ID` | `NEWAPI_API_KEY` 所属管理员用户 ID | AI 封禁正式执行必填 |
 | `REDIS_PASSWORD` | 内置 Redis 密码 | 留空或自定义 |
 | `TIMEZONE` | 服务时区 | `Asia/Shanghai` |
 | `LOG_LEVEL` | 日志级别 | `info` |

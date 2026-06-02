@@ -532,6 +532,11 @@ func (s *AIAutoBanService) RunScan(window string, limit int) map[string]interfac
 	if err := s.validateAIBanRuntimeConfig(config); err != nil {
 		return finish("failed", nil, err.Error())
 	}
+	if !dryRun {
+		if err := validateNewAPIExternalBanConfig(); err != nil {
+			return finish("failed", nil, err.Error())
+		}
+	}
 	if suspended, remaining := s.isAIAPISuspended(); suspended {
 		return finish("suspended", nil, fmt.Sprintf("AI API 已暂停，剩余冷却 %d 秒", remaining))
 	}
