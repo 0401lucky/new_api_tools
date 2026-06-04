@@ -320,6 +320,20 @@ func TestParseAIBanAssessmentRepairsCommonModelJSON(t *testing.T) {
 	}
 }
 
+func TestGetEndpointURLKeepsGeminiOpenAIBase(t *testing.T) {
+	got := getEndpointURL("https://generativelanguage.googleapis.com/v1beta/openai/", "/chat/completions")
+	want := "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+	if got != want {
+		t.Fatalf("gemini openai base url should not append /v1, got %s", got)
+	}
+
+	got = getEndpointURL("https://api.example.test", "/models")
+	want = "https://api.example.test/v1/models"
+	if got != want {
+		t.Fatalf("plain base url should append /v1, got %s", got)
+	}
+}
+
 func TestCallAIBanModelFallsBackWhenJSONModeUnsupported(t *testing.T) {
 	clearAIBanTestCache(t)
 	calls := 0
@@ -356,6 +370,44 @@ func TestCallAIBanModelFallsBackWhenJSONModeUnsupported(t *testing.T) {
 	}
 	if calls != 2 || got.Action != "normal" {
 		t.Fatalf("unexpected fallback result calls=%d got=%+v", calls, got)
+	}
+}
+
+func TestCallAIBanModelUsesJSONSchemaForGemini(t *testing.T) {
+	clearAIBanTestCache(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		format, ok := payload["response_format"].(map[string]interface{})
+		if !ok || format["type"] != "json_schema" {
+			t.Fatalf("gemini should use json_schema response_format, got %#v", payload["response_format"])
+		}
+		schema, _ := format["json_schema"].(map[string]interface{})
+		if schema["name"] != "ai_ban_assessment" {
+			t.Fatalf("unexpected json schema: %#v", schema)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "gemini-3.5-flash",
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": `{"should_ban":false,"risk_score":2,"confidence":0.9,"action":"normal","reason":"正常"}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	got, err := (&AIAutoBanService{}).callAIBanModel(map[string]interface{}{
+		"base_url": server.URL,
+		"api_key":  "test-key",
+		"model":    "gemini-3.5-flash",
+	}, "审查")
+	if err != nil {
+		t.Fatalf("gemini json_schema call should parse: %v", err)
+	}
+	if got.Action != "normal" || got.Model != "gemini-3.5-flash" {
+		t.Fatalf("unexpected gemini assessment: %+v", got)
 	}
 }
 

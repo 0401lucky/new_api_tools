@@ -125,6 +125,14 @@ type aiBanFunctionCall struct {
 	Arguments string `json:"arguments"`
 }
 
+type aiBanResponseFormatMode string
+
+const (
+	aiBanResponseFormatNone       aiBanResponseFormatMode = ""
+	aiBanResponseFormatJSONObject aiBanResponseFormatMode = "json_object"
+	aiBanResponseFormatJSONSchema aiBanResponseFormatMode = "json_schema"
+)
+
 func (e *aiBanModelError) Error() string {
 	return e.Message
 }
@@ -766,28 +774,35 @@ func extractAIBanTopIPs(analysis map[string]interface{}) []string {
 }
 
 func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt string) (aiBanAssessment, error) {
-	assessment, err := s.sendAIBanChatCompletion(config, prompt, true)
+	responseFormatMode := preferredAIBanResponseFormatMode(config)
+	assessment, err := s.sendAIBanChatCompletion(config, prompt, responseFormatMode)
 	if err == nil {
 		return assessment, nil
 	}
 
-	jsonMode := true
 	if isJSONModeUnsupported(err) {
-		jsonMode = false
-		assessment, err = s.sendAIBanChatCompletion(config, prompt, false)
+		responseFormatMode = fallbackAIBanResponseFormatMode(responseFormatMode)
+		assessment, err = s.sendAIBanChatCompletion(config, prompt, responseFormatMode)
 		if err == nil {
 			return assessment, nil
+		}
+		if responseFormatMode != aiBanResponseFormatNone && isJSONModeUnsupported(err) {
+			responseFormatMode = aiBanResponseFormatNone
+			assessment, err = s.sendAIBanChatCompletion(config, prompt, responseFormatMode)
+			if err == nil {
+				return assessment, nil
+			}
 		}
 	}
 
 	if isAIBanParseError(err) {
 		retryPrompt := prompt + "\n\n上一次回复不是合法 JSON。请重新输出一个严格 JSON 对象：所有 key 必须使用双引号，字段之间必须有逗号，不要输出 Markdown、解释、注释或多余文本。"
-		retryAssessment, retryErr := s.sendAIBanChatCompletion(config, retryPrompt, jsonMode)
+		retryAssessment, retryErr := s.sendAIBanChatCompletion(config, retryPrompt, responseFormatMode)
 		if retryErr == nil {
 			return retryAssessment, nil
 		}
-		if jsonMode && isAIBanParseError(retryErr) {
-			fallbackAssessment, fallbackErr := s.sendAIBanChatCompletion(config, retryPrompt, false)
+		if responseFormatMode != aiBanResponseFormatNone && isAIBanParseError(retryErr) {
+			fallbackAssessment, fallbackErr := s.sendAIBanChatCompletion(config, retryPrompt, aiBanResponseFormatNone)
 			if fallbackErr == nil {
 				return fallbackAssessment, nil
 			}
@@ -799,7 +814,78 @@ func (s *AIAutoBanService) callAIBanModel(config map[string]interface{}, prompt 
 	return aiBanAssessment{}, err
 }
 
-func (s *AIAutoBanService) sendAIBanChatCompletion(config map[string]interface{}, prompt string, jsonMode bool) (aiBanAssessment, error) {
+func preferredAIBanResponseFormatMode(config map[string]interface{}) aiBanResponseFormatMode {
+	baseURL := strings.ToLower(configString(config, "base_url"))
+	model := strings.ToLower(configString(config, "model"))
+	if strings.Contains(model, "gemini") ||
+		strings.Contains(baseURL, "generativelanguage.googleapis.com") ||
+		strings.Contains(baseURL, "/v1beta/openai") ||
+		strings.Contains(baseURL, "/v1alpha/openai") {
+		return aiBanResponseFormatJSONSchema
+	}
+	return aiBanResponseFormatJSONObject
+}
+
+func fallbackAIBanResponseFormatMode(mode aiBanResponseFormatMode) aiBanResponseFormatMode {
+	switch mode {
+	case aiBanResponseFormatJSONSchema:
+		return aiBanResponseFormatJSONObject
+	case aiBanResponseFormatJSONObject:
+		return aiBanResponseFormatNone
+	default:
+		return aiBanResponseFormatNone
+	}
+}
+
+func buildAIBanJSONSchemaResponseFormat() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "json_schema",
+		"json_schema": map[string]interface{}{
+			"name":   "ai_ban_assessment",
+			"strict": true,
+			"schema": map[string]interface{}{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"should_ban", "risk_score", "confidence", "action", "reason"},
+				"properties": map[string]interface{}{
+					"should_ban": map[string]interface{}{
+						"type": "boolean",
+					},
+					"risk_score": map[string]interface{}{
+						"type":    "number",
+						"minimum": 0,
+						"maximum": 10,
+					},
+					"confidence": map[string]interface{}{
+						"type":    "number",
+						"minimum": 0,
+						"maximum": 1,
+					},
+					"action": map[string]interface{}{
+						"type": "string",
+						"enum": []string{"normal", "monitor", "warn", "ban"},
+					},
+					"reason": map[string]interface{}{
+						"type": "string",
+					},
+				},
+			},
+		},
+	}
+}
+
+func setAIBanResponseFormat(payload map[string]interface{}, mode aiBanResponseFormatMode) {
+	switch mode {
+	case aiBanResponseFormatJSONSchema:
+		payload["response_format"] = buildAIBanJSONSchemaResponseFormat()
+	case aiBanResponseFormatJSONObject:
+		payload["response_format"] = map[string]string{"type": "json_object"}
+	default:
+		delete(payload, "response_format")
+	}
+}
+
+func (s *AIAutoBanService) sendAIBanChatCompletion(config map[string]interface{}, prompt string, responseFormatMode aiBanResponseFormatMode) (aiBanAssessment, error) {
 	baseURL := configString(config, "base_url")
 	apiKey := configString(config, "api_key")
 	model := configString(config, "model")
@@ -813,9 +899,7 @@ func (s *AIAutoBanService) sendAIBanChatCompletion(config map[string]interface{}
 		"temperature": 0.1,
 		"max_tokens":  500,
 	}
-	if jsonMode {
-		payload["response_format"] = map[string]string{"type": "json_object"}
-	}
+	setAIBanResponseFormat(payload, responseFormatMode)
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return aiBanAssessment{}, fmt.Errorf("序列化 AI 请求失败: %w", err)

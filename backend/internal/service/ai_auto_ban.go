@@ -602,7 +602,12 @@ func (s *AIAutoBanService) TestConnection() map[string]interface{} {
 // getEndpointURL builds the API URL, auto-appending /v1 if needed
 func getEndpointURL(baseURL, endpoint string) string {
 	base := strings.TrimRight(baseURL, "/")
-	if strings.HasSuffix(base, "/v1") {
+	path := strings.ToLower(base)
+	if strings.HasSuffix(path, "/v1") ||
+		strings.HasSuffix(path, "/v1/openai") ||
+		strings.HasSuffix(path, "/v1beta/openai") ||
+		strings.HasSuffix(path, "/v1alpha/openai") ||
+		strings.HasSuffix(path, "/openai") {
 		return base + endpoint
 	}
 	return base + "/v1" + endpoint
