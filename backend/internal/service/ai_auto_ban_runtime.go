@@ -928,6 +928,7 @@ func (s *AIAutoBanService) sendAIBanChatCompletion(config map[string]interface{}
 		return aiBanAssessment{}, &aiBanModelError{
 			Message:     fmt.Sprintf("AI 请求失败 (%d): %s", resp.StatusCode, trimForMessage(raw, 300)),
 			RawResponse: raw,
+			Model:       model,
 			StatusCode:  resp.StatusCode,
 		}
 	}
@@ -1062,7 +1063,15 @@ func isJSONModeUnsupported(err error) bool {
 		strings.Contains(msg, "json_object") ||
 		strings.Contains(msg, "json mode") ||
 		strings.Contains(msg, "unsupported") ||
-		strings.Contains(msg, "not support")
+		strings.Contains(msg, "not support") ||
+		(isAIBanGeminiError(modelErr, msg) &&
+			(strings.Contains(msg, "invalid_argument") || strings.Contains(msg, "invalid argument")))
+}
+
+func isAIBanGeminiError(modelErr *aiBanModelError, msg string) bool {
+	return strings.Contains(strings.ToLower(modelErr.Model), "gemini") ||
+		strings.Contains(msg, "google api returned error") ||
+		strings.Contains(msg, "generativelanguage")
 }
 
 func isAIBanParseError(err error) bool {

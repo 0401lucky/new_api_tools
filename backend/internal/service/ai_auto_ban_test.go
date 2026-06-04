@@ -411,6 +411,53 @@ func TestCallAIBanModelUsesJSONSchemaForGemini(t *testing.T) {
 	}
 }
 
+func TestCallAIBanModelFallsBackForGeminiInvalidArgument(t *testing.T) {
+	clearAIBanTestCache(t)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		body, _ := io.ReadAll(r.Body)
+		bodyText := string(body)
+		if calls == 1 {
+			if !strings.Contains(bodyText, `"type":"json_schema"`) {
+				t.Fatalf("first gemini call should use json_schema: %s", bodyText)
+			}
+			http.Error(w, `{"error":{"message":"Proxy browser error: Google API returned error: 400 INVALID_ARGUMENT {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}","type":"upstream_error","param":"","code":400}}`, http.StatusBadRequest)
+			return
+		}
+		if calls == 2 {
+			if !strings.Contains(bodyText, `"type":"json_object"`) {
+				t.Fatalf("second gemini call should fallback to json_object: %s", bodyText)
+			}
+			http.Error(w, `{"error":{"message":"Google API returned error: 400 INVALID_ARGUMENT","type":"upstream_error","code":400}}`, http.StatusBadRequest)
+			return
+		}
+		if strings.Contains(bodyText, "response_format") {
+			t.Fatalf("third gemini call should omit response_format: %s", bodyText)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "gemini-3.5-flash",
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": `{"should_ban":false,"risk_score":3,"confidence":0.8,"action":"monitor","reason":"无格式成功"}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	got, err := (&AIAutoBanService{}).callAIBanModel(map[string]interface{}{
+		"base_url": server.URL,
+		"api_key":  "test-key",
+		"model":    "gemini-3.5-flash",
+	}, "审查")
+	if err != nil {
+		t.Fatalf("gemini invalid_argument should fallback: %v", err)
+	}
+	if calls != 3 || got.Action != "monitor" || got.Reason != "无格式成功" {
+		t.Fatalf("unexpected fallback result calls=%d got=%+v", calls, got)
+	}
+}
+
 func TestCallAIBanModelRetriesAfterParseFailure(t *testing.T) {
 	clearAIBanTestCache(t)
 	calls := 0
