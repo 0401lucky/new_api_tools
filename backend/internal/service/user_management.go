@@ -21,6 +21,45 @@ const (
 	InactiveThreshold = 30 * 24 * 3600 // 30 days
 )
 
+func userActivityCondition(userRef, activityLevel string, nowUnix int64) (string, error) {
+	activeThreshold := nowUnix - ActiveThreshold
+	inactiveThreshold := nowUnix - InactiveThreshold
+
+	switch activityLevel {
+	case ActivityActive:
+		return fmt.Sprintf(
+			"%s.request_count > 0 AND EXISTS (SELECT 1 FROM logs l WHERE l.user_id = %s.id AND l.type IN (2,5) AND l.created_at >= %d)",
+			userRef, userRef, activeThreshold), nil
+	case ActivityInactive:
+		return fmt.Sprintf(
+			"%s.request_count > 0 AND EXISTS (SELECT 1 FROM logs l WHERE l.user_id = %s.id AND l.type IN (2,5) AND l.created_at >= %d AND l.created_at < %d) AND NOT EXISTS (SELECT 1 FROM logs l WHERE l.user_id = %s.id AND l.type IN (2,5) AND l.created_at >= %d)",
+			userRef, userRef, inactiveThreshold, activeThreshold, userRef, activeThreshold), nil
+	case ActivityVeryInactive:
+		return fmt.Sprintf(
+			"%s.request_count > 0 AND NOT EXISTS (SELECT 1 FROM logs l WHERE l.user_id = %s.id AND l.type IN (2,5) AND l.created_at >= %d)",
+			userRef, userRef, inactiveThreshold), nil
+	case ActivityNever:
+		return fmt.Sprintf("%s.request_count = 0", userRef), nil
+	case "", "all":
+		return "", nil
+	default:
+		return "", fmt.Errorf("invalid activity level: %s", activityLevel)
+	}
+}
+
+func resolveActivityLevel(requestCount, lastRequestTime, nowUnix int64) string {
+	if requestCount == 0 {
+		return ActivityNever
+	}
+	if lastRequestTime >= nowUnix-ActiveThreshold {
+		return ActivityActive
+	}
+	if lastRequestTime >= nowUnix-InactiveThreshold {
+		return ActivityInactive
+	}
+	return ActivityVeryInactive
+}
+
 // UserManagementService handles user queries and operations
 type UserManagementService struct {
 	db *database.Manager
@@ -143,6 +182,8 @@ type ListUsersParams struct {
 
 // GetUsers returns paginated user list
 func (s *UserManagementService) GetUsers(params ListUsersParams) (map[string]interface{}, error) {
+	nowUnix := time.Now().Unix()
+
 	if params.Page < 1 {
 		params.Page = 1
 	}
@@ -238,8 +279,12 @@ func (s *UserManagementService) GetUsers(params ListUsersParams) (map[string]int
 		}
 		args = append(args, params.GroupFilter)
 	}
-	if params.ActivityFilter == ActivityNever {
-		where = append(where, "u.request_count = 0")
+	if params.ActivityFilter != "" && params.ActivityFilter != "all" {
+		condition, err := userActivityCondition("u", params.ActivityFilter, nowUnix)
+		if err != nil {
+			return nil, err
+		}
+		where = append(where, "("+condition+")")
 	}
 
 	// Source filter — only apply if the relevant column exists
@@ -285,7 +330,9 @@ func (s *UserManagementService) GetUsers(params ListUsersParams) (map[string]int
 
 	// Build SELECT columns dynamically based on available OAuth columns
 	// NOTE: users table does NOT have created_at — do not select it
-	selectCols := fmt.Sprintf("u.id, u.username, u.display_name, u.email, u.role, u.status, u.quota, u.used_quota, u.request_count, u.%s, u.aff_code, u.remark", groupCol)
+	selectCols := fmt.Sprintf(
+		"u.id, u.username, u.display_name, u.email, u.role, u.status, u.quota, u.used_quota, u.request_count, u.%s, u.aff_code, u.remark, (SELECT MAX(l.created_at) FROM logs l WHERE l.user_id = u.id AND l.type IN (2,5)) AS last_request_time",
+		groupCol)
 	for _, col := range oauthCols {
 		selectCols += fmt.Sprintf(", u.%s", col)
 	}
@@ -316,12 +363,11 @@ func (s *UserManagementService) GetUsers(params ListUsersParams) (map[string]int
 	// Enrich rows with computed fields (activity_level, source, linux_do_id)
 	for _, row := range rows {
 		reqCount := toInt64(row["request_count"])
-		if reqCount == 0 {
-			row["activity_level"] = ActivityNever
-		} else {
-			row["activity_level"] = ActivityActive
+		lastRequestTime := toInt64(row["last_request_time"])
+		row["activity_level"] = resolveActivityLevel(reqCount, lastRequestTime, nowUnix)
+		if lastRequestTime == 0 {
+			row["last_request_time"] = nil
 		}
-		row["last_request_time"] = nil
 
 		// Preserve linux_do_id for frontend display
 		linuxDoID := ""
@@ -565,19 +611,12 @@ func (s *UserManagementService) PreviewSoftDeletedUsers() (map[string]interface{
 func (s *UserManagementService) BatchDeleteInactiveUsers(activityLevel string, dryRun, hardDelete bool) (map[string]interface{}, error) {
 	now := time.Now()
 	nowUnix := now.Unix()
-	var condition string
-
-	switch activityLevel {
-	case ActivityNever:
-		condition = "request_count = 0"
-	case ActivityVeryInactive:
-		threshold := nowUnix - InactiveThreshold
-		condition = fmt.Sprintf("request_count > 0 AND NOT EXISTS (SELECT 1 FROM logs l WHERE l.user_id = users.id AND l.type IN (2,5) AND l.created_at >= %d)", threshold)
-	case ActivityInactive:
-		threshold := nowUnix - ActiveThreshold
-		condition = fmt.Sprintf("request_count > 0 AND NOT EXISTS (SELECT 1 FROM logs l WHERE l.user_id = users.id AND l.type IN (2,5) AND l.created_at >= %d)", threshold)
-	default:
+	if activityLevel == ActivityActive {
 		return nil, fmt.Errorf("invalid activity level: %s", activityLevel)
+	}
+	condition, err := userActivityCondition("users", activityLevel, nowUnix)
+	if err != nil {
+		return nil, err
 	}
 
 	// Count affected users
